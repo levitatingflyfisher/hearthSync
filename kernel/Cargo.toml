@@ -1,0 +1,23 @@
+[package]
+name = "hearth_sync_kernel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "OpenHearth sync kernel: signed, hash-linked op log folded into per-field LWW rows, OR-sets and append streams"
+
+[dependencies]
+# Exact pins: the same versions the spike measured on Android and WASM.
+dcbor = "=0.25.2"          # deterministic CBOR (RFC 8949 §4.2 + dCBOR profile)
+sha2 = "=0.11.0"
+ed25519-dalek = "=3.0.0"   # default features (fast, zeroize); no rand: the kernel takes no randomness
+hkdf = "=0.13.0"           # enroll key from the household seed, as key_derivation.dart does
+zeroize = "=1.9.0"
+# Sealing (ADR 0008). No default features: `getrandom` would pull randomness (and a
+# wasm32 shim) into a kernel that takes none; nonces are synthetic.
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc"] }
+hmac = "=0.13.0"           # the synthetic nonce's PRF; already in the tree through hkdf
+unicode-normalization = "=0.1.25"  # NFC checks and normalisation; already in the tree through dcbor
+
+[dev-dependencies]
+proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
+serde_json = "1"

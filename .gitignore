@@ -1,0 +1,20 @@
+# Rust / cargo
+target/
+**/target/
+# Flutter / Dart
+build/
+**/build/
+.dart_tool/
+**/.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/android/local.properties
+**/android/.gradle/
+**/android/app/.cxx/
+*.iml
+.idea/
+# Local tool downloads (prebuilt codegen, etc.)
+.tools/
+# Local-only agent notes
+CLAUDE.md
+docs/superpowers/

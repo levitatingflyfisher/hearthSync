@@ -1,0 +1,60 @@
+# hearth-relay as a hardened systemd service (the alternative to the container).
+# Install the binary at /usr/local/bin/hearth-relay and a TLS proxy on the same host
+# (relay/deploy/README.md), then:  systemctl enable --now hearth-relay
+#
+# The relay needs no outbound connections, so all IP traffic is denied except to and
+# from this host: IPAddressDeny also blocks inbound traffic, which is why the proxy must
+# run locally and the relay listens on 127.0.0.1 only.
+
+[Unit]
+Description=hearthSync relay (data-blind store-and-forward of sealed ops)
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/hearth-relay --data /var/lib/hearth-relay --listen 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5s
+
+# Identity and files: a throwaway user; the state directory is the only writable path.
+DynamicUser=yes
+StateDirectory=hearth-relay
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Resources: a hijacked relay cannot mine much. Size MemoryMax to the quotas.
+MemoryMax=512M
+MemorySwapMax=0
+CPUQuota=50%
+TasksMax=64
+
+# Network: no egress (a miner needs a pool; the relay needs nothing).
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

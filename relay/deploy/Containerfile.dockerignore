@@ -1,0 +1,9 @@
+# Only the workspace manifest, the kernel and the relay go into the build context.
+*
+!Cargo.toml
+!Cargo.lock
+!rustfmt.toml
+!kernel/
+!relay/
+kernel/target
+relay/target

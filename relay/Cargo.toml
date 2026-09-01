@@ -1,0 +1,24 @@
+[package]
+name = "hearth_sync_relay"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "OpenHearth hearthSync relay: data-blind store-and-forward of sealed ops per household channel"
+
+[[bin]]
+name = "hearth-relay"
+path = "src/main.rs"
+
+# Each dependency is justified in docs/adr/0013-relay.md. Exact pins, as in the kernel.
+[dependencies]
+hearth_sync_kernel = { path = "../kernel" }   # the checks: verify_strict, enroll/forget auth messages, envelope_ref
+dcbor = "=0.25.2"                              # request/response bodies; already in the tree through the kernel
+rusqlite = { version = "=0.40.1", features = ["bundled"] }   # persistence; bundled SQLite, no system library
+tokio = { version = "=1.52.4", default-features = false, features = ["rt-multi-thread", "net", "time", "signal", "sync"] }
+hyper = { version = "=1.10.1", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "=0.1.20", default-features = false, features = ["tokio"] }   # TokioIo + TokioTimer glue
+http-body-util = "=0.1.4"                      # Full and Limited bodies
+
+[dev-dependencies]
+proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
+serde_json = "1"

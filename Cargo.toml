@@ -1,0 +1,34 @@
+[workspace]
+# The kernel and the Rust relay. The spike keeps its own standalone crate
+# (flutter_rust_bridge scaffold) and is not part of the workspace.
+members = ["kernel", "relay"]
+exclude = ["spike"]
+resolver = "2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Dependencies (Ed25519, SHA-256, dCBOR) optimised even in test builds: debug-mode
+# curve arithmetic made the property tests ~10x slower. The kernel itself stays debug.
+[profile.dev.package."*"]
+opt-level = 3
+
+# Performance numbers (tests/perf.rs): release, but optimised for speed. The release
+# profile above is tuned for size (the WASM and .so budgets), which slows curve
+# arithmetic several-fold.
+[profile.perf]
+inherits = "release"
+opt-level = 3
+panic = "unwind"
+
+# The relay binary (relay/deploy): optimised for speed, since it checks an Ed25519
+# signature on every request, and unwinding, so a panic in one request's task is
+# contained instead of aborting the process that serves every household.
+[profile.relay]
+inherits = "release"
+opt-level = 3
+panic = "unwind"

@@ -1,0 +1,49 @@
+[package]
+name = "hearth_sync_bridge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "flutter_rust_bridge binding of hearth_sync_kernel::api for the hearth_sync Dart package"
+
+[lib]
+crate-type = ["cdylib"]  # Android .so, host .so for tests, WASM; iOS would add "staticlib"
+
+[dependencies]
+flutter_rust_bridge = "=2.13.0"
+hearth_sync_kernel = { path = "../../../kernel" }
+zeroize = "=1.9.0"   # wipe the seed a Dart signer passes in; already in the tree through the kernel
+
+# Its own workspace, so its lockfile and profiles are its own: the root workspace
+# (kernel, relays) is edited by other work, and this crate ships to Android and WASM.
+[workspace]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+# Size first for the bridge and the kernel (the WASM budget), but the crypto
+# dependencies at opt-level 3: at opt-level "z" Ed25519 was ~25x slower (kernel v1
+# stage 1). Per-package overrides apply before LTO; the report measures the effect.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package.curve25519-dalek]
+opt-level = 3
+[profile.release.package.ed25519-dalek]
+opt-level = 3
+[profile.release.package.sha2]
+opt-level = 3
+[profile.release.package.chacha20]
+opt-level = 3
+[profile.release.package.poly1305]
+opt-level = 3
+[profile.release.package.chacha20poly1305]
+opt-level = 3
+
+# wasm-pack's bundled binaryen must be told about the post-MVP features rustc
+# emits by default for wasm32, or wasm-opt refuses the module (spike).
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue"]

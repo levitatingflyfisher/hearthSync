@@ -1,0 +1,5 @@
+# Only the module goes into the build context: no caches, no local binary, no harness.
+.cache
+hearth-relay-go
+difftest
+deploy

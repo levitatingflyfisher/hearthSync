@@ -1,0 +1,9 @@
+# freezed runs only over the generated bindings (frb emits freezed classes for
+# enums with data). Run with `dart run build_runner build --force-jit`: sqlite3's
+# build hooks stop build_runner's AOT mode.
+targets:
+  $default:
+    sources:
+      - lib/**
+      - $package$
+      - pubspec.yaml

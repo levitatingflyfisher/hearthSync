@@ -1,0 +1,31 @@
+[package]
+name = "rust_lib_app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# Exact pins: the spike measures these versions, not whatever resolves later.
+flutter_rust_bridge = "=2.13.0"
+dcbor = "=0.25.2"          # deterministic CBOR (RFC 8949 §4.2 + dCBOR profile)
+sha2 = "=0.11.0"
+ed25519-dalek = "=3.0.0"   # default features only: no rand, the kernel takes no randomness
+anyhow = "1"
+
+[profile.release]
+# Size-first: the web criterion is gzipped WASM size.
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
+
+# wasm-pack's bundled binaryen must be told about the post-MVP features rustc
+# now emits by default for wasm32 (bulk memory etc.), or wasm-opt refuses the module.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue"]

@@ -1,0 +1,21 @@
+# hearth-relay image: distroless (no shell, no package manager), non-root, and meant to
+# run with a read-only root filesystem and no egress. Build from the repo root:
+#   podman build -f relay/deploy/Containerfile --ignorefile relay/deploy/Containerfile.dockerignore -t hearth-relay .
+# Pin both base images by digest when you deploy (see relay/deploy/README.md).
+
+FROM docker.io/library/rust:1-slim-bookworm AS build
+WORKDIR /src
+COPY Cargo.toml Cargo.lock rustfmt.toml ./
+COPY kernel kernel
+COPY relay relay
+# SQLite is compiled in (rusqlite "bundled"); nothing else is linked but glibc.
+RUN cargo build --locked --profile relay -p hearth_sync_relay \
+ && install -D target/relay/hearth-relay /out/hearth-relay
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+COPY --from=build /out/hearth-relay /hearth-relay
+# The only writable path. Mount a volume here; the root filesystem stays read-only.
+VOLUME ["/data"]
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/hearth-relay", "--data", "/data", "--listen", "0.0.0.0:8080"]
