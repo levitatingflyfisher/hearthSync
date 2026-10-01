@@ -42,6 +42,24 @@ void main() {
     expect(a.mirror.snapshot, b.mirror.snapshot);
   });
 
+  test('a Forget reaches the forgotten phone over the LAN, with no relay', () async {
+    // The way a Forget still reaches a device the relay cannot (its channel
+    // expired with the Forget's entries in it): the next same-Wi-Fi sync.
+    final clock = TestClock();
+    final a = await device(1, clock);
+    final b = await device(2, clock);
+    clock.now += 1;
+    await a.hs.syncWith(b.hs);
+    await a.hs.forgetDevice(await b.signer.publicKey());
+    clock.now += 1;
+
+    final listener = await listen(a);
+    await syncOverLan(b.hs, seed, LanCode.tryParse(listener.code.text)!);
+    await listener.done;
+    expect(b.hs.isWiped, isTrue);
+    expect(b.signer.destroyed, isTrue);
+  });
+
   test('a phone outside the household is refused, and nothing changes', () async {
     final clock = TestClock();
     final a = await device(1, clock);

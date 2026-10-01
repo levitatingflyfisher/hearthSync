@@ -40,7 +40,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 2079405868;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1945167802;
 
 // Section: executor
 
@@ -994,6 +994,7 @@ fn wire__crate__api__kernel__HearthKernel_relay_outbox_impl(
                 <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HearthKernel>>>::sse_decode(
                     &mut deserializer,
                 );
+            let api_max = <u64>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, ()>((move || {
                 let mut api_that_guard = None;
@@ -1007,7 +1008,7 @@ fn wire__crate__api__kernel__HearthKernel_relay_outbox_impl(
                     }
                 }
                 let api_that_guard = api_that_guard.unwrap();
-                let output_ok = Ok::<_, ()>(crate::api::kernel::HearthKernel::relay_outbox(&*api_that_guard))?;
+                let output_ok = Ok::<_, ()>(crate::api::kernel::HearthKernel::relay_outbox(&*api_that_guard, api_max))?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -1033,6 +1034,7 @@ fn wire__crate__api__kernel__HearthKernel_relay_pulled_impl(
                 <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HearthKernel>>>::sse_decode(
                     &mut deserializer,
                 );
+            let api_generation = <u64>::sse_decode(&mut deserializer);
             let api_cursors = <Vec<crate::api::kernel::RelayCursor>>::sse_decode(&mut deserializer);
             deserializer.end();
             transform_result_sse::<_, crate::api::kernel::ApiError>((move || {
@@ -1047,7 +1049,8 @@ fn wire__crate__api__kernel__HearthKernel_relay_pulled_impl(
                     }
                 }
                 let mut api_that_guard = api_that_guard.unwrap();
-                let output_ok = crate::api::kernel::HearthKernel::relay_pulled(&mut *api_that_guard, api_cursors)?;
+                let output_ok =
+                    crate::api::kernel::HearthKernel::relay_pulled(&mut *api_that_guard, api_generation, api_cursors)?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -1168,6 +1171,47 @@ fn wire__crate__api__kernel__HearthKernel_relay_uploaded_impl(
                 let mut api_that_guard = api_that_guard.unwrap();
                 let output_ok =
                     crate::api::kernel::HearthKernel::relay_uploaded(&mut *api_that_guard, api_ids, api_first_seq)?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__kernel__HearthKernel_relay_verify_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "HearthKernel_relay_verify",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_)
+            };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that =
+                <RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<HearthKernel>>>::sse_decode(
+                    &mut deserializer,
+                );
+            let api_sealed = <Vec<Vec<u8>>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let mut api_that_guard = None;
+                let decode_indices_ = flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                    flutter_rust_bridge::for_generated::LockableOrderInfo::new(&api_that, 0, true),
+                ]);
+                for i in decode_indices_ {
+                    match i {
+                        0 => api_that_guard = Some(api_that.lockable_decode_sync_ref_mut()),
+                        _ => unreachable!(),
+                    }
+                }
+                let mut api_that_guard = api_that_guard.unwrap();
+                let output_ok =
+                    Ok::<_, ()>(crate::api::kernel::HearthKernel::relay_verify(&mut *api_that_guard, api_sealed))?;
                 std::result::Result::Ok(output_ok)
             })())
         },
@@ -1571,6 +1615,7 @@ const _: fn() = || {
         crate::api::kernel::ApiError::BadSignature => {}
         crate::api::kernel::ApiError::NothingToFinish => {}
         crate::api::kernel::ApiError::AwaitingSignature => {}
+        crate::api::kernel::ApiError::StaleGeneration => {}
     }
     {
         let Collection = None::<crate::api::kernel::Collection>.unwrap();
@@ -1902,6 +1947,9 @@ impl SseDecode for crate::api::kernel::ApiError {
             }
             12 => {
                 return crate::api::kernel::ApiError::AwaitingSignature;
+            }
+            13 => {
+                return crate::api::kernel::ApiError::StaleGeneration;
             }
             _ => {
                 unimplemented!("");
@@ -2772,17 +2820,18 @@ fn pde_ffi_dispatcher_sync_impl(
         26 => wire__crate__api__kernel__HearthKernel_relay_snapshot_impl(ptr, rust_vec_len, data_len),
         27 => wire__crate__api__kernel__HearthKernel_relay_state_impl(ptr, rust_vec_len, data_len),
         28 => wire__crate__api__kernel__HearthKernel_relay_uploaded_impl(ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__kernel__HearthKernel_request_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__kernel__HearthKernel_review_impl(ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__kernel__HearthKernel_snapshot_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__kernel__HearthKernel_status_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__kernel__HearthKernel_view_all_impl(ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__kernel__HearthKernel_write_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__signing__ed25519_public_key_impl(ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__signing__ed25519_sign_impl(ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__kernel__init_app_impl(ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__kernel__sealed_handover_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__kernel__stored_info_impl(ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__kernel__HearthKernel_relay_verify_impl(ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__kernel__HearthKernel_request_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__kernel__HearthKernel_review_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__kernel__HearthKernel_snapshot_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__kernel__HearthKernel_status_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__kernel__HearthKernel_view_all_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__kernel__HearthKernel_write_impl(ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__signing__ed25519_public_key_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__signing__ed25519_sign_impl(ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__kernel__init_app_impl(ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__kernel__sealed_handover_impl(ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__kernel__stored_info_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2832,6 +2881,7 @@ impl flutter_rust_bridge::IntoDart for FrbWrapper<crate::api::kernel::ApiError> 
             crate::api::kernel::ApiError::BadSignature => [10.into_dart()].into_dart(),
             crate::api::kernel::ApiError::NothingToFinish => [11.into_dart()].into_dart(),
             crate::api::kernel::ApiError::AwaitingSignature => [12.into_dart()].into_dart(),
+            crate::api::kernel::ApiError::StaleGeneration => [13.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -3479,6 +3529,9 @@ impl SseEncode for crate::api::kernel::ApiError {
             }
             crate::api::kernel::ApiError::AwaitingSignature => {
                 <i32>::sse_encode(12, serializer);
+            }
+            crate::api::kernel::ApiError::StaleGeneration => {
+                <i32>::sse_encode(13, serializer);
             }
             _ => {
                 unimplemented!("");

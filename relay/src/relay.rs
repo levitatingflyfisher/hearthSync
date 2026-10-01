@@ -145,12 +145,20 @@ impl Relay {
     /// expire idle channels and drop expired nonces. Returns the number of entries
     /// pruned.
     pub fn sweep(&mut self, now: u64) -> Result<u64, StoreError> {
+        self.sweep_ahead(now, 0)
+    }
+
+    /// The sweep, with pruning and idle expiry run as of `now + ahead_ms` (nonces
+    /// still expire as of `now`). For tests only: the HTTP layer's `--test-hooks`
+    /// hook, so an expiry test needs neither a restart nor a fake clock.
+    pub fn sweep_ahead(&mut self, now: u64, ahead_ms: u64) -> Result<u64, StoreError> {
+        let later = now.saturating_add(ahead_ms);
         let tx = self.store.tx()?;
         let mut n = 0;
         for ch in tx.channel_ids()? {
-            n += tx.prune(&ch, now, self.cfg.retain_ms)?;
+            n += tx.prune(&ch, later, self.cfg.retain_ms)?;
         }
-        tx.expire_idle(now, self.cfg.idle_ms)?;
+        tx.expire_idle(later, self.cfg.idle_ms)?;
         tx.commit()?;
         self.nonces.retain(|_, live| {
             live.retain(|(_, exp)| *exp >= now);
@@ -316,6 +324,18 @@ impl Relay {
         }
     }
 
+    /// A pull's reader: enrolled, or forgotten. A Forget can be recorded for a
+    /// target that never enrolled in the channel (the household came back after an
+    /// expiry and forgot it first), and that target must still read its Forget op.
+    fn reader(&mut self, ch: &Channel, d: &DeviceId) -> R<(crate::store::ChannelRow, DeviceRow)> {
+        let tx = self.store.read()?;
+        let Some(c) = tx.channel(ch)? else { return Err(Fail::Code("not_enrolled")) };
+        match tx.device(ch, d)? {
+            Some(row) if row.enrolled() || row.forgotten() => Ok((c, row)),
+            _ => Err(Fail::Code("not_enrolled")),
+        }
+    }
+
     fn signed(&self, signer: &DeviceId, msg: &[u8], sig: &[u8; 64]) -> R<()> {
         if !verify_strict(signer, msg, sig) {
             return Err(Fail::Code("bad_signature"));
@@ -428,7 +448,7 @@ impl Relay {
         if r.cursors.len() as u64 > self.cfg.max_devices {
             return Err(Fail::Code("too_large"));
         }
-        let (c, me) = self.enrolled(ch, &r.reader)?;
+        let (c, me) = self.reader(ch, &r.reader)?;
         self.fresh(r.ts, now)?;
         self.signed(&r.reader, &r.signable(ch), &r.sig)?;
         self.epoch_ok(r.epoch)?;

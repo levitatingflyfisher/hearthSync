@@ -67,6 +67,11 @@ func post(t *testing.T, addr, path string, body []byte) reply {
 
 func withServer(t *testing.T, cfg Config, f func(addr string)) {
 	t.Helper()
+	withServerLimits(t, cfg, LimitsFor(cfg), f)
+}
+
+func withServerLimits(t *testing.T, cfg Config, lim HTTPLimits, f func(addr string)) {
+	t.Helper()
 	r, err := Open(t.TempDir(), cfg, true)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +84,7 @@ func withServer(t *testing.T, cfg Config, f func(addr string)) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	srv := NewServer(r, LimitsFor(cfg))
+	srv := NewServer(r, lim)
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(ctx, ln) }()
 	f(ln.Addr().String())
@@ -170,6 +175,61 @@ func TestTheHandlerAnswersTheSameOverHTTP(t *testing.T) {
 		}
 		r = request(t, addr, []byte("GET /v1/"+chHex+"/pull HTTP/1.1\r\nHost: relay\r\nConnection: close\r\n\r\n"))
 		if r.status != 405 {
+			t.Fatalf("GET: %d", r.status)
+		}
+	})
+}
+
+func TestTheTestSweepHookExpiresIdleChannelsAheadOfTimeOnlyWhenEnabled(t *testing.T) {
+	hk := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{3}, 32))
+	dk := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{4}, 32))
+	var hh, dev ID
+	copy(hh[:], hk.Public().(ed25519.PublicKey))
+	copy(dev[:], dk.Public().(ed25519.PublicKey))
+	ch := ChannelID("lullaby", &hh)
+	chHex := fmt.Sprintf("%x", ch)
+	auth := ed25519.Sign(hk, enrollAuthMsg("lullaby", &dev, "phone"))
+	enroll := dcbor.Enc{}.Array(5).Text("lullaby").Bytes(hh[:]).Bytes(dev[:]).Text("phone").Bytes(auth)
+	cfg := DefaultConfig()
+	cfg.IdleMS = 10000
+	// Off by default: the path is unknown, like any other.
+	withServer(t, cfg, func(addr string) {
+		if r := post(t, addr, "/test/sweep", []byte("20000")); r.status != 404 {
+			t.Fatalf("hook without the flag: %d", r.status)
+		}
+	})
+	lim := LimitsFor(cfg)
+	lim.TestHooks = true
+	withServerLimits(t, cfg, lim, func(addr string) {
+		gen := func() string { return string(post(t, addr, "/v1/"+chHex+"/enroll", enroll).body) }
+		if g := gen(); g != "\x82\x62ok\x01" {
+			t.Fatalf("enroll: %q", g)
+		}
+		// A sweep as of now: the channel is not idle yet.
+		if r := post(t, addr, "/test/sweep", nil); r.status != 200 || string(r.body) != "ok" {
+			t.Fatalf("sweep now: %+v", r)
+		}
+		if g := gen(); g != "\x82\x62ok\x01" {
+			t.Fatalf("after a sweep now: %q", g)
+		}
+		// As of 20 s from now: it expired, so enrolling again makes it anew.
+		if r := post(t, addr, "/test/sweep", []byte("20000")); r.status != 200 {
+			t.Fatalf("sweep ahead: %+v", r)
+		}
+		if g := gen(); g != "\x82\x62ok\x02" {
+			t.Fatalf("after a sweep ahead: %q", g)
+		}
+		// The relay's clock did not move: a read signed now is fresh, not stale.
+		q := pullReq{reader: dev, ts: NowMS(), epoch: 1, nonce: [16]byte{1}}
+		copy(q.sig[:], ed25519.Sign(dk, q.signable(&ch)))
+		body := dcbor.Enc{}.Array(6).Bytes(dev[:]).Uint(q.ts).Uint(q.epoch).Bytes(q.nonce[:]).Array(0).Bytes(q.sig[:])
+		if r := post(t, addr, "/v1/"+chHex+"/pull", body); r.status != 200 {
+			t.Fatalf("pull after the hook: %+v", r)
+		}
+		if r := post(t, addr, "/test/sweep", []byte("soon")); r.status != 400 {
+			t.Fatalf("bad body: %d", r.status)
+		}
+		if r := request(t, addr, []byte("GET /test/sweep HTTP/1.1\r\nHost: relay\r\nConnection: close\r\n\r\n")); r.status != 404 {
 			t.Fatalf("GET: %d", r.status)
 		}
 	})

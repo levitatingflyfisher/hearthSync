@@ -274,7 +274,12 @@ Signed by `reader` over `["oh-relay-pull/v1", channel, reader, ts, epoch, nonce,
 
 1. Shape → `bad_request`
 2. `cursors` lists more than `max_devices` uploaders → `too_large`
-3. `reader` is enrolled (a forgotten reader may pull, frozen) → `not_enrolled`
+3. `reader` is enrolled, or forgotten → `not_enrolled`. A forgotten reader pulls
+   frozen (below), even one that was never enrolled in the channel: a Forget can be
+   recorded for a target that has no record yet, as when the household returns after
+   its channel expired and forgets a device before that device enrols again. The
+   target must still be able to read its Forget op, since `enroll` answers it
+   `forgotten`.
 4. `ts` → `stale`
 5. `sig` → `bad_signature`
 6. `epoch` is the relay's → `["err", "epoch", current]`
@@ -349,6 +354,12 @@ only its forgotten devices' records and their logs' `last` (with `next_ord` and
 reuses), and can never store entries again at seqs it already used, which it could
 otherwise fill up to its `cut_seq` for the returning household to pull. Requests between two
 sweeps see an idle channel as it is; only the sweep expires it.
+
+A forgotten device whose Forget was recorded before the expiry keeps its record, but
+the entries it could see are gone with the rest, so it can no longer learn its Forget
+through this relay (it still can over the LAN, ADR 0014). One forgotten after the
+household returned reads the new log frozen at its new record, which holds the Forget
+op that was uploaded again first.
 
 A household that returns after its channel expired finds its devices `not_enrolled`
 and enrols them again. The `enroll` answer names a new generation, and so does every
@@ -427,6 +438,21 @@ foreground, a timer of minutes, not seconds), and treats `rate_limited` as "back
   request's content type.
 - The relay speaks plain HTTP/1.1 and expects a TLS proxy in front (see
   `relay/deploy/README.md`).
+
+### Test hook (not part of the protocol)
+
+A relay started with `--test-hooks` (both CLIs) also answers `POST /test/sweep`: the
+body is a decimal number of milliseconds `N` (empty means 0), and the relay runs its
+sweep (pruning and idle expiry) as of `now + N`, then answers `200` with the text
+`ok` (`400 bad_request` for any other body). Nonces still expire as of `now`, and the
+relay's clock does not move, so requests signed with the wall clock stay fresh. It
+lets an end-to-end test expire a channel without restarting the relay or faking its
+clock. Without the flag the path is unknown (`404 not_found`), as any other. It is for
+tests only: never start a relay that serves households with it.
+
+The hook lives in each relay's HTTP layer, not in the request handler: the vectors and
+the differential harness drive the handler (and run the same sweep as their `sweep`
+steps), so neither changes.
 
 ## Store digest
 

@@ -42,7 +42,7 @@ Future<void> pull(HearthSync hs, Relay relay) async {
     next.add(RelayCursor(unhex(uploader), log.length));
   });
   await hs.ingest(envs);
-  await hs.relayPulled(next);
+  await hs.relayPulled(relay.generation, next);
 }
 
 void main() {
@@ -123,5 +123,65 @@ void main() {
     await push(c.hs, relay);
     await pull(c.hs, relay);
     expect(c.hs.view().rows.any((r) => r.row == 'r1'), isTrue);
+  });
+
+  test(
+    'cursors from another generation are refused and change nothing',
+    () async {
+      final clock = TestClock();
+      final relay = Relay();
+      final a = await device(1, clock);
+      await pull(a.hs, relay);
+      clock.now += 1;
+      await a.hs.put('rooms', 'r1', {'name': 'Kitchen'});
+      await push(a.hs, relay);
+      final me = (a.hs.devices().firstWhere((d) => d.me)).device;
+      // The channel was made again (generation 2) while a pull of generation 1
+      // was under way.
+      await a.hs.relayGeneration(2);
+      await expectLater(
+        a.hs.relayPulled(1, [RelayCursor(me, 5)]),
+        throwsA(
+          isA<HearthSyncException>().having(
+            (e) => e.code,
+            'code',
+            'stale_generation',
+          ),
+        ),
+      );
+      expect(a.hs.relayState().nextSeq, 1);
+      expect(a.hs.relayState().cursors, isEmpty);
+    },
+  );
+
+  test('ops verified ahead in batches adopt as they would unverified', () async {
+    final clock = TestClock();
+    final relay = Relay();
+    final a = await device(1, clock);
+    final b = await device(2, clock);
+    await push(a.hs, relay);
+    await push(b.hs, relay);
+    await pull(a.hs, relay);
+    await pull(b.hs, relay);
+    clock.now += 1;
+    await a.hs.put('rooms', 'r1', {'name': 'Kitchen'});
+    await push(a.hs, relay);
+    clock.now += 1;
+    await a.hs.checkpoint();
+    clock.now += 1;
+    await a.hs.put('rooms', 'r2', {'name': 'Den'});
+    await push(a.hs, relay);
+    clock.now += 60000; // past the 20 s test horizon
+    await a.hs.compact();
+    final snap = await a.hs.snapshot();
+    expect(snap, isNotNull);
+    final envs = [for (final log in relay.logs.values) ...log];
+    final verified =
+        await b.hs.relayVerify(envs.sublist(0, 2)) +
+        await b.hs.relayVerify(envs.sublist(2));
+    expect(verified, envs.length);
+    await b.hs.adoptSnapshot(snap!, envs);
+    expect(b.hs.view().rows.map((r) => r.row), containsAll(['r1', 'r2']));
+    expect(await a.hs.relayOutbox(max: 1), isEmpty);
   });
 }

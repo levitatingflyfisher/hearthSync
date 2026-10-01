@@ -17,7 +17,8 @@ mkdir -p /srv/hearth-relay
 ./hearth-relay-go --data /srv/hearth-relay --listen 127.0.0.1:8080
 ```
 
-The flags, output rules and exit codes are the Rust relay's (`--help` lists them). It
+The flags (including the test-only `--test-hooks`), output rules and exit codes are the
+Rust relay's (`--help` lists them). It
 prints nothing on stdout while serving; stderr carries one JSON object per line, never a
 channel id, device id or client address. SIGTERM or SIGINT stops it.
 
@@ -59,7 +60,7 @@ The differential harness needs the Rust relay behind its driver. Build that from
 the tests at it:
 
 ```sh
-(cd difftest/rustdriver && CARGO_TARGET_DIR=../../../target cargo build --offline)
+(cd difftest/rustdriver && CARGO_TARGET_DIR=../../../target cargo build --locked)
 HEARTH_RUST_DRIVER=$PWD/../target/debug/hearth_relay_diffdriver \
   DIFF_RUNS=300 DIFF_STEPS=300 DIFF_OUT=$PWD/.cache/divergences go test -run Differential -v ./difftest/
 ```

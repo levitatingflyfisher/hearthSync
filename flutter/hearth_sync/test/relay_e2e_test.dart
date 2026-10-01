@@ -6,9 +6,10 @@
 // or point HEARTH_RUST_RELAY / HEARTH_GO_RELAY at them. A missing binary fails
 // the test rather than skipping it.
 //
-// The relays run on the wall clock (they have no fake one), so these devices do
-// too. A channel's expiry is reached by restarting a relay with --idle-days 0:
-// its start-up sweep then expires every channel.
+// The relays run on the wall clock, so these devices do too. A channel's expiry
+// is reached through the relays' test hook (started with --test-hooks):
+// POST /test/sweep runs the sweep as if the posted milliseconds had passed,
+// without moving the relay's clock or restarting it.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -54,7 +55,7 @@ class RelayProcess {
 
   Uri get uri => Uri.parse('http://127.0.0.1:$port/');
 
-  Future<void> start({int? idleDays}) async {
+  Future<void> start() async {
     _sweep = Completer();
     final started = Completer<void>();
     _p = await Process.start(binary, [
@@ -65,7 +66,7 @@ class RelayProcess {
       // The tests read far more often than a real client may.
       '--max-reader-nonces',
       '100000',
-      if (idleDays != null) ...['--idle-days', '$idleDays'],
+      '--test-hooks',
     ]);
     // Drain both pipes all the time, or the relay blocks on a full one.
     _p.stdout.drain<void>();
@@ -97,9 +98,19 @@ class RelayProcess {
 
   /// Stop it and start it again over the same store, on the same port: its
   /// memory (nonces, buckets) goes and its epoch moves on.
-  Future<void> restart({int? idleDays}) async {
+  Future<void> restart() async {
     await stop();
-    await start(idleDays: idleDays);
+    await start();
+  }
+
+  /// The relay's sweep as if [ahead] had passed: channels idle that long
+  /// expire (the test hook; the relay's clock stays put).
+  Future<void> sweepAhead(Duration ahead) async {
+    final r = await http.post(
+      uri.resolve('test/sweep'),
+      body: '${ahead.inMilliseconds}',
+    );
+    expect((r.statusCode, r.body), (200, 'ok'));
   }
 
   Future<void> stop() async {
@@ -241,11 +252,9 @@ void main() {
           );
           expect(b.rows, contains('r3'));
 
-          // The household goes quiet and its channel expires (a restart with
-          // --idle-days 0 expires everything at the start-up sweep). B edits
-          // offline meanwhile.
-          await relay.restart(idleDays: 0);
-          await relay.swept();
+          // The household goes quiet for longer than the idle period (400
+          // days) and its channel expires. B edits offline meanwhile.
+          await relay.sweepAhead(const Duration(days: 401));
           final before = a.d.hs.relayState().generation;
           await b.d.hs.put('rooms', 'b-offline', {'name': 'Shed'});
           final ra = await a.sync();
@@ -261,6 +270,45 @@ void main() {
           final c = await join(3, relay);
           await c.sync();
           expect(viewOf(c), viewOf(a));
+        } finally {
+          await relay.stop();
+        }
+      },
+    );
+
+    test(
+      '$side: a device forgotten after its channel expired, before it enrolled again, still wipes',
+      timeout: const Timeout(Duration(minutes: 3)),
+      () async {
+        final relay = await launch(side, 'expired-forget');
+        try {
+          final a = await join(1, relay);
+          final b = await join(2, relay);
+          await a.d.hs.put('rooms', 'r1', {'name': 'Kitchen'});
+          await a.sync();
+          await b.sync();
+          expect(b.rows, contains('r1'));
+
+          // The household goes quiet past the idle period; the channel expires.
+          await relay.sweepAhead(const Duration(days: 401));
+          // A comes back first and forgets B before B has enrolled again: the
+          // relay holds a Forget record for a device it never enrolled in the
+          // new channel, and B's enrolment would be refused.
+          final bid = await b.d.signer.publicKey();
+          await a.d.hs.forgetDevice(bid);
+          final ra = await a.sync();
+          expect(ra.newGeneration, isTrue);
+          expect(ra.forgetsPosted, 1);
+          await a.d.hs.put('rooms', 'secret', {'name': 'Safe'});
+          await a.sync();
+
+          // B, still on the old generation, pulls the new channel frozen at its
+          // Forget, finds the Forget op and wipes.
+          final rb = await b.sync();
+          expect(rb.newGeneration, isTrue);
+          expect(rb.wiped, isTrue);
+          expect(b.d.signer.destroyed, isTrue);
+          expect(b.rows, isNot(contains('secret')));
         } finally {
           await relay.stop();
         }

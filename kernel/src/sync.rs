@@ -414,7 +414,7 @@ impl<S: OpStore + Default> Replica<S> {
     }
 
     fn adopt(&mut self, snap: Snapshot, ops: Vec<Vec<u8>>, now: u64) -> Result<AcceptReport, KernelError> {
-        match self.adopt_install(snap, ops, now)? {
+        match self.adopt_install(snap, ops, now, &BTreeSet::new())? {
             Installed::Done(report) => Ok(report),
             Installed::Rebase(a) => self.adopt_rebase(*a, now),
         }
@@ -423,11 +423,14 @@ impl<S: OpStore + Default> Replica<S> {
     /// Adoption, first half: verify, install and ingest, and work out what the
     /// rebase must redo. Authors nothing, so the api can run it once and replay only
     /// the second half while it collects signatures (ADR 0011).
+    /// `checked`: ids of ops among `ops` whose signatures were verified already
+    /// (see [`Replica::ingest_checked`]).
     pub(crate) fn adopt_install(
         &mut self,
         snap: Snapshot,
         ops: Vec<Vec<u8>>,
         now: u64,
+        checked: &BTreeSet<Id>,
     ) -> Result<Installed, KernelError> {
         // Verify before touching anything.
         let (verified, _, cp_id) = self.verify(&snap)?;
@@ -504,7 +507,7 @@ impl<S: OpStore + Default> Replica<S> {
 
         let wiped = self.install(verified);
         debug_assert!(!wiped, "a snapshot that forgets us is never adopted");
-        let mut ingest = self.ingest(&ops, now);
+        let mut ingest = self.ingest_checked(&ops, now, checked);
         ingest.wiped |= wiped;
         // Whatever the offer delivered, the peer has: no rebase, no review item.
         {

@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Every action is pinned to a commit; these are the toolchains the code is
+  # tested with.
+  RUST_TOOLCHAIN: '1.98.0'
+  GO_VERSION: '1.25.12'
+  FLUTTER_VERSION: '3.38.7'
+
+jobs:
+  rust:
+    name: Kernel and Rust relay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go-relay/go.sum
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            flutter/hearth_sync/rust -> target
+      - name: rustfmt
+        run: |
+          cargo fmt --all --check
+          (cd flutter/hearth_sync/rust && cargo fmt --check)
+      - name: clippy
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          (cd flutter/hearth_sync/rust && cargo clippy --all-targets --locked -- -D warnings)
+      - name: Kernel tests
+        # The property tests run 256 cases each here (1000 locally by default).
+        env:
+          PROPTEST_CASES: '256'
+        run: cargo test -p hearth_sync_kernel --locked
+      - name: Rust relay tests (conformance, e2e against both relays, HTTP, CLI, fuzz)
+        # The end-to-end tests also run against the Go relay behind its driver.
+        env:
+          PROPTEST_CASES: '256'
+        run: |
+          (cd go-relay && go build -o .cache/godriver ./difftest/godriver)
+          HEARTH_GO_DRIVER="$PWD/go-relay/.cache/godriver" cargo test -p hearth_sync_relay --locked
+
+  go:
+    name: Go relay and differential harness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: go-relay
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go-relay/go.sum
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: go-relay/difftest/rustdriver -> ../../../target
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        run: go vet ./...
+      - name: Tests (conformance vectors, codec, signatures, HTTP, CLI)
+        run: go test -count=1 ./...
+      - name: Static release builds (the home relay's amd64, arm64 and armv7 binaries)
+        run: |
+          deploy/home/build-release.sh .cache/dist
+          file .cache/dist/hearth-relay-go-*
+      - name: Build the Rust relay's driver
+        working-directory: go-relay/difftest/rustdriver
+        run: CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" cargo build --locked
+      - name: Differential harness (both relays, bounded run)
+        env:
+          DIFF_RUNS: '20'
+          DIFF_STEPS: '200'
+          DIFF_SEED: '1'
+        run: |
+          HEARTH_RUST_DRIVER="$GITHUB_WORKSPACE/target/debug/hearth_relay_diffdriver" \
+            DIFF_OUT="$PWD/.cache/divergences" \
+            go test -count=1 -v -run 'TestVectorsAgreeOnBothSides|TestDifferential' ./difftest/ | tee .cache/diff.log
+          # A missing driver skips these tests; here that is a failure.
+          if grep -q -- '--- SKIP' .cache/diff.log; then exit 1; fi
+          grep -q -- '--- PASS: TestDifferential' .cache/diff.log
+      - name: Keep the first divergence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: divergences
+          path: go-relay/.cache/divergences
+          if-no-files-found: ignore
+
+  dart:
+    name: Flutter package (host tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go-relay/go.sum
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            flutter/hearth_sync/rust -> target
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      # The host tests load the bridge's Linux library, and the end-to-end test
+      # starts both relay binaries on localhost; it fails if either is missing.
+      - name: Build the bridge library
+        working-directory: flutter/hearth_sync/rust
+        run: CARGO_TARGET_DIR="$PWD/target" cargo build --release --locked
+      - name: Build both relays
+        run: |
+          cargo build --release --locked -p hearth_sync_relay
+          (cd go-relay && go build -o .cache/hearth-relay-go ./cmd/hearth-relay-go)
+      - name: pub get
+        run: |
+          (cd flutter/hearth_sync && flutter pub get)
+          (cd flutter/hearth_sync/example && flutter pub get)
+      - name: analyze
+        working-directory: flutter/hearth_sync
+        run: flutter analyze
+      - name: test
+        working-directory: flutter/hearth_sync
+        run: flutter test --concurrency=1

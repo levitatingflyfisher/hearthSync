@@ -6,6 +6,10 @@ alert: all of it applies unchanged, with `hearth-relay-go` for `hearth-relay`. R
 relay or the other on a data directory, not both; their stores differ (bbolt here,
 SQLite there) and neither reads the other's.
 
+For a household running its own relay on a spare computer or Raspberry Pi (a user
+unit, a compose file, static arm64 builds and HTTPS options), see
+[`home/README.md`](home/README.md).
+
 Nothing here has been deployed, and the image has not been built yet.
 The unit passes `systemd-analyze verify` (which only notes the binary is not installed);
 its sandbox has not been run.

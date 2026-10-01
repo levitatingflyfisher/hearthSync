@@ -18,6 +18,8 @@ import 'values.dart';
 /// The clock the kernel reads (Unix time); inject a fixed one in tests.
 typedef Clock = DateTime Function();
 
+final _u64Max = (BigInt.one << 64) - BigInt.one;
+
 /// A kernel call failed. Nothing changed; see [code].
 class HearthSyncException implements Exception {
   /// An error.
@@ -68,6 +70,9 @@ class HearthSyncException implements Exception {
     ),
     k.ApiError_AwaitingSignature() => const HearthSyncException(
       'awaiting_signature',
+    ),
+    k.ApiError_StaleGeneration() => const HearthSyncException(
+      'stale_generation',
     ),
   };
 
@@ -462,6 +467,14 @@ class HearthSync implements SyncPeer {
         ),
       );
 
+  /// Open [ops] and check their signatures ahead of the [adoptSnapshot] that
+  /// will take them, so that adoption skips those checks (most of its per-op
+  /// cost). Call it on small batches, yielding between them, to keep a long
+  /// adoption from holding the UI thread in one call. Returns how many verified;
+  /// stores nothing.
+  Future<int> relayVerify(List<Uint8List> ops) =>
+      _serial(() async => _k.relayVerify(sealed: ops).toInt());
+
   // ---------------------------------------------------------------- relay client
   //
   // The kernel keeps the relay client's positions in its records (ADR 0011, "The
@@ -497,9 +510,14 @@ class HearthSync implements SyncPeer {
   );
 
   /// Every op this device holds that the relay is not known to hold, sealed,
-  /// parents first: its own writes and what it learned over the LAN.
-  Future<List<SealedOp>> relayOutbox() => _serial(
-    () async => [for (final s in _k.relayOutbox()) SealedOp(s.id, s.sealed)],
+  /// parents first: its own writes and what it learned over the LAN. With
+  /// [max], only the first [max] (upload a page, acknowledge it, ask again):
+  /// only that page is sealed.
+  Future<List<SealedOp>> relayOutbox({int? max}) => _serial(
+    () async => [
+      for (final s in _k.relayOutbox(max: max == null ? _u64Max : u64(max)))
+        SealedOp(s.id, s.sealed),
+    ],
   );
 
   /// The relay acknowledged an append of these ops (in the order sent) from
@@ -510,19 +528,24 @@ class HearthSync implements SyncPeer {
     ),
   );
 
-  /// Every log was pulled to [cursors] and ingested.
-  Future<Changes> relayPulled(List<RelayCursor> cursors) => _serial(
-    () => _store(
-      _call(
-        () => _k.relayPulled(
-          cursors: [
-            for (final c in cursors)
-              k.RelayCursor(device: c.device, seq: u64(c.seq)),
-          ],
+  /// Every log was pulled to [cursors] and ingested, in a pull whose answers
+  /// named [generation]. Cursors from another generation than
+  /// [RelayState.generation] are refused (`stale_generation`) and nothing
+  /// changes: call [relayGeneration] and pull again.
+  Future<Changes> relayPulled(int generation, List<RelayCursor> cursors) =>
+      _serial(
+        () => _store(
+          _call(
+            () => _k.relayPulled(
+              generation: u64(generation),
+              cursors: [
+                for (final c in cursors)
+                  k.RelayCursor(device: c.device, seq: u64(c.seq)),
+              ],
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
   /// This device's base as a sealed snapshot, with its covers, if it has pruned.
   Future<RelaySnapshot?> relaySnapshot() => _serial(() async {

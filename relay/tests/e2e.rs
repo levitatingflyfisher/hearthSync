@@ -257,7 +257,7 @@ impl Dev {
     /// then post every Forget record the kernel now hands out (only those whose Forget
     /// op is on the relay). Returns the append's answer.
     fn push(&mut self, relay: &mut dyn Side, now: u64) -> String {
-        let out = self.k.relay_outbox();
+        let out = self.k.relay_outbox(u64::MAX);
         let mut answer = "ok".to_string();
         if !out.is_empty() {
             let first = self.k.relay_state().next_seq;
@@ -344,7 +344,8 @@ impl Dev {
             if self.k.relay_state().generation != generation {
                 // The read enrolled again and learned a new generation: the cursors
                 // it was signed with name logs that are gone. Pull again from the
-                // kernel's reset positions (relay_pulled would take them as seen).
+                // kernel's reset positions (its answer names the new generation, so
+                // relay_pulled would take the old cursors as seen in the new logs).
                 generation = self.k.relay_state().generation;
                 cursors.clear();
                 envs.clear();
@@ -382,18 +383,18 @@ impl Dev {
         }
     }
 
-    fn pulled(&mut self, cursors: Vec<RelayCursor>) {
-        let o = self.k.relay_pulled(cursors).unwrap();
+    fn pulled(&mut self, generation: u64, cursors: Vec<RelayCursor>) {
+        let o = self.k.relay_pulled(generation, cursors).unwrap();
         self.take(o);
     }
 
     /// Pull, ingest, and record the cursors.
     fn pull(&mut self, relay: &mut dyn Side, now: u64) -> Outcome {
-        let (envs, gap, _, cursors) = self.pull_raw(relay, now);
+        let (envs, gap, answer, cursors) = self.pull_raw(relay, now);
         assert!(!gap, "unexpected gap");
         let o = self.k.ingest(envs, now).unwrap();
         let o = self.take(o);
-        self.pulled(cursors);
+        self.pulled(answer.generation, cursors);
         o
     }
 
@@ -435,7 +436,10 @@ fn two_devices_converge_through_the_relay_alone() {
         assert_eq!(a.k.view_all(), b.k.view_all());
         assert_eq!(a.k.heads(), b.k.heads());
         assert_eq!(a.k.view_all().rows.len(), 2);
-        assert!(a.k.relay_outbox().is_empty() && b.k.relay_outbox().is_empty(), "everything is on the relay");
+        assert!(
+            a.k.relay_outbox(u64::MAX).is_empty() && b.k.relay_outbox(u64::MAX).is_empty(),
+            "everything is on the relay"
+        );
         assert_eq!(a.epoch, 1, "the first read learned the epoch");
         // An empty batch is malformed; a stranger cannot read.
         let body = client::append(&channel(), &a.signer, 1, vec![], T0 + 9);
@@ -481,12 +485,12 @@ fn a_device_forgotten_through_the_relay_wipes_on_its_next_pull_and_its_writes_ar
         let s = a.k.forget_device(b.id().to_vec(), T0 + 4);
         a.drive(s);
         assert!(a.k.relay_forgets().is_empty(), "no record before the Forget op is uploaded");
-        let forget_env = a.k.relay_outbox().last().unwrap().sealed.clone();
+        let forget_env = a.k.relay_outbox(u64::MAX).last().unwrap().sealed.clone();
         assert_eq!(a.push(relay, T0 + 4), "ok");
         assert!(a.k.relay_forgets().is_empty(), "the record was posted");
         // A writes after the Forget; B, frozen at the Forget, never sees it.
         a.put("secret", 7, T0 + 6);
-        let secret = envelope_ref(&a.k.relay_outbox().last().unwrap().sealed).unwrap();
+        let secret = envelope_ref(&a.k.relay_outbox(u64::MAX).last().unwrap().sealed).unwrap();
         a.push(relay, T0 + 6);
         let (envs, _, _, _) = b.pull_raw(relay, T0 + 7);
         let o = b.k.ingest(envs.clone(), T0 + 7).unwrap();
@@ -519,7 +523,7 @@ fn a_device_that_forgets_itself_hands_over_its_last_ops_then_posts_its_record() 
         let o = c.drive(s);
         assert!(o.wiped);
         assert!(c.k.relay_forgets().is_empty());
-        let last = c.k.relay_outbox().last().unwrap().sealed.clone();
+        let last = c.k.relay_outbox(u64::MAX).last().unwrap().sealed.clone();
         // Back online: the handover goes up, then the record, whose cut ends at the Forget
         // op's own seq (the record-first order is not reachable through the api).
         assert_eq!(c.push(relay, T0 + 5), "ok");
@@ -585,9 +589,12 @@ fn a_device_back_after_the_horizon_converges_from_a_snapshot_and_the_ops_above_i
         });
         assert_eq!(code(&r), "ok");
         let (snap, _) = client::parse_fetch(&r.body).unwrap();
+        for batch in envs.chunks(32) {
+            d.k.relay_verify(batch.to_vec());
+        }
         let s = d.k.adopt_snapshot(snap, envs, back);
         d.drive(s);
-        d.pulled(cursors);
+        d.pulled(answer.generation, cursors);
         d.pull(relay, back + 1);
         assert_eq!(d.k.view_all(), a.k.view_all(), "D converges from the relay alone");
         // D's own writes flow again.

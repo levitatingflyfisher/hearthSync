@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 2079405868;
+  int get rustContentHash => 1945167802;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -191,10 +191,12 @@ abstract class RustLibApi extends BaseApi {
 
   List<SealedOp> crateApiKernelHearthKernelRelayOutbox({
     required HearthKernel that,
+    required BigInt max,
   });
 
   Outcome crateApiKernelHearthKernelRelayPulled({
     required HearthKernel that,
+    required BigInt generation,
     required List<RelayCursor> cursors,
   });
 
@@ -208,6 +210,11 @@ abstract class RustLibApi extends BaseApi {
     required HearthKernel that,
     required List<Uint8List> ids,
     required BigInt firstSeq,
+  });
+
+  BigInt crateApiKernelHearthKernelRelayVerify({
+    required HearthKernel that,
+    required List<Uint8List> sealed,
   });
 
   RequestOut crateApiKernelHearthKernelRequest({
@@ -1016,6 +1023,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   @override
   List<SealedOp> crateApiKernelHearthKernelRelayOutbox({
     required HearthKernel that,
+    required BigInt max,
   }) {
     return handler.executeSync(
       SyncTask(
@@ -1025,6 +1033,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
+          sse_encode_u_64(max, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 24)!;
         },
         codec: SseCodec(
@@ -1032,7 +1041,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: null,
         ),
         constMeta: kCrateApiKernelHearthKernelRelayOutboxConstMeta,
-        argValues: [that],
+        argValues: [that, max],
         apiImpl: this,
       ),
     );
@@ -1041,12 +1050,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiKernelHearthKernelRelayOutboxConstMeta =>
       const TaskConstMeta(
         debugName: "HearthKernel_relay_outbox",
-        argNames: ["that"],
+        argNames: ["that", "max"],
       );
 
   @override
   Outcome crateApiKernelHearthKernelRelayPulled({
     required HearthKernel that,
+    required BigInt generation,
     required List<RelayCursor> cursors,
   }) {
     return handler.executeSync(
@@ -1057,6 +1067,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
+          sse_encode_u_64(generation, serializer);
           sse_encode_list_relay_cursor(cursors, serializer);
           return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 25)!;
         },
@@ -1065,7 +1076,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_api_error,
         ),
         constMeta: kCrateApiKernelHearthKernelRelayPulledConstMeta,
-        argValues: [that, cursors],
+        argValues: [that, generation, cursors],
         apiImpl: this,
       ),
     );
@@ -1074,7 +1085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiKernelHearthKernelRelayPulledConstMeta =>
       const TaskConstMeta(
         debugName: "HearthKernel_relay_pulled",
-        argNames: ["that", "cursors"],
+        argNames: ["that", "generation", "cursors"],
       );
 
   @override
@@ -1175,6 +1186,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  BigInt crateApiKernelHearthKernelRelayVerify({
+    required HearthKernel that,
+    required List<Uint8List> sealed,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_RefMut_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerHearthKernel(
+            that,
+            serializer,
+          );
+          sse_encode_list_list_prim_u_8_strict(sealed, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_u_64,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiKernelHearthKernelRelayVerifyConstMeta,
+        argValues: [that, sealed],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiKernelHearthKernelRelayVerifyConstMeta =>
+      const TaskConstMeta(
+        debugName: "HearthKernel_relay_verify",
+        argNames: ["that", "sealed"],
+      );
+
+  @override
   RequestOut crateApiKernelHearthKernelRequest({
     required HearthKernel that,
     required List<int> hello,
@@ -1188,7 +1232,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_list_prim_u_8_loose(hello, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 29)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_request_out,
@@ -1219,7 +1263,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 30)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_review_entry,
@@ -1245,7 +1289,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 31)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_list_prim_u_8_strict,
@@ -1274,7 +1318,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 32)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_status,
@@ -1300,7 +1344,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_view_dump,
@@ -1335,7 +1379,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_box_autoadd_write(write, serializer);
           sse_encode_u_64(now, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 34)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_step,
@@ -1361,7 +1405,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(seed, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 35)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -1388,7 +1432,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(seed, serializer);
           sse_encode_list_prim_u_8_loose(message, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 36)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_prim_u_8_strict,
@@ -1412,7 +1456,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -1441,7 +1485,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_record(records, serializer);
           sse_encode_box_autoadd_schema(schema, serializer);
           sse_encode_u_64(now, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 38)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_list_sealed_op,
@@ -1467,7 +1511,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_record(records, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 39)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 40)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_box_autoadd_stored_info,
@@ -1566,6 +1610,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return ApiError_NothingToFinish();
       case 12:
         return ApiError_AwaitingSignature();
+      case 13:
+        return ApiError_StaleGeneration();
       default:
         throw Exception("unreachable");
     }
@@ -2351,6 +2397,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return ApiError_NothingToFinish();
       case 12:
         return ApiError_AwaitingSignature();
+      case 13:
+        return ApiError_StaleGeneration();
       default:
         throw UnimplementedError('');
     }
@@ -3278,6 +3326,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_i_32(11, serializer);
       case ApiError_AwaitingSignature():
         sse_encode_i_32(12, serializer);
+      case ApiError_StaleGeneration():
+        sse_encode_i_32(13, serializer);
     }
   }
 
@@ -4128,14 +4178,18 @@ class HearthKernelImpl extends RustOpaque implements HearthKernel {
       );
 
   /// See `Kernel::relay_outbox`.
-  List<SealedOp> relayOutbox() =>
-      RustLib.instance.api.crateApiKernelHearthKernelRelayOutbox(that: this);
+  List<SealedOp> relayOutbox({required BigInt max}) => RustLib.instance.api
+      .crateApiKernelHearthKernelRelayOutbox(that: this, max: max);
 
   /// See `Kernel::relay_pulled`.
-  Outcome relayPulled({required List<RelayCursor> cursors}) => RustLib
-      .instance
-      .api
-      .crateApiKernelHearthKernelRelayPulled(that: this, cursors: cursors);
+  Outcome relayPulled({
+    required BigInt generation,
+    required List<RelayCursor> cursors,
+  }) => RustLib.instance.api.crateApiKernelHearthKernelRelayPulled(
+    that: this,
+    generation: generation,
+    cursors: cursors,
+  );
 
   /// See `Kernel::relay_snapshot`.
   RelaySnapshot? relaySnapshot() =>
@@ -4154,6 +4208,10 @@ class HearthKernelImpl extends RustOpaque implements HearthKernel {
     ids: ids,
     firstSeq: firstSeq,
   );
+
+  /// See `Kernel::relay_verify`.
+  BigInt relayVerify({required List<Uint8List> sealed}) => RustLib.instance.api
+      .crateApiKernelHearthKernelRelayVerify(that: this, sealed: sealed);
 
   /// See `Kernel::request`.
   RequestOut request({required List<int> hello}) => RustLib.instance.api

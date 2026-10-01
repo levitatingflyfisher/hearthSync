@@ -55,7 +55,7 @@ extension ApiErrorPatterns on ApiError {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ApiError_BadArgument value)?  badArgument,TResult Function( ApiError_Schema value)?  schema,TResult Function( ApiError_Undeclared value)?  undeclared,TResult Function( ApiError_Persist value)?  persist,TResult Function( ApiError_BadMessage value)?  badMessage,TResult Function( ApiError_NoKeys value)?  noKeys,TResult Function( ApiError_ClockBehind value)?  clockBehind,TResult Function( ApiError_Rejected value)?  rejected,TResult Function( ApiError_BadSnapshot value)?  badSnapshot,TResult Function( ApiError_SnapshotUnavailable value)?  snapshotUnavailable,TResult Function( ApiError_BadSignature value)?  badSignature,TResult Function( ApiError_NothingToFinish value)?  nothingToFinish,TResult Function( ApiError_AwaitingSignature value)?  awaitingSignature,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ApiError_BadArgument value)?  badArgument,TResult Function( ApiError_Schema value)?  schema,TResult Function( ApiError_Undeclared value)?  undeclared,TResult Function( ApiError_Persist value)?  persist,TResult Function( ApiError_BadMessage value)?  badMessage,TResult Function( ApiError_NoKeys value)?  noKeys,TResult Function( ApiError_ClockBehind value)?  clockBehind,TResult Function( ApiError_Rejected value)?  rejected,TResult Function( ApiError_BadSnapshot value)?  badSnapshot,TResult Function( ApiError_SnapshotUnavailable value)?  snapshotUnavailable,TResult Function( ApiError_BadSignature value)?  badSignature,TResult Function( ApiError_NothingToFinish value)?  nothingToFinish,TResult Function( ApiError_AwaitingSignature value)?  awaitingSignature,TResult Function( ApiError_StaleGeneration value)?  staleGeneration,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ApiError_BadArgument() when badArgument != null:
@@ -71,7 +71,8 @@ return badSnapshot(_that);case ApiError_SnapshotUnavailable() when snapshotUnava
 return snapshotUnavailable(_that);case ApiError_BadSignature() when badSignature != null:
 return badSignature(_that);case ApiError_NothingToFinish() when nothingToFinish != null:
 return nothingToFinish(_that);case ApiError_AwaitingSignature() when awaitingSignature != null:
-return awaitingSignature(_that);case _:
+return awaitingSignature(_that);case ApiError_StaleGeneration() when staleGeneration != null:
+return staleGeneration(_that);case _:
   return orElse();
 
 }
@@ -89,7 +90,7 @@ return awaitingSignature(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ApiError_BadArgument value)  badArgument,required TResult Function( ApiError_Schema value)  schema,required TResult Function( ApiError_Undeclared value)  undeclared,required TResult Function( ApiError_Persist value)  persist,required TResult Function( ApiError_BadMessage value)  badMessage,required TResult Function( ApiError_NoKeys value)  noKeys,required TResult Function( ApiError_ClockBehind value)  clockBehind,required TResult Function( ApiError_Rejected value)  rejected,required TResult Function( ApiError_BadSnapshot value)  badSnapshot,required TResult Function( ApiError_SnapshotUnavailable value)  snapshotUnavailable,required TResult Function( ApiError_BadSignature value)  badSignature,required TResult Function( ApiError_NothingToFinish value)  nothingToFinish,required TResult Function( ApiError_AwaitingSignature value)  awaitingSignature,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ApiError_BadArgument value)  badArgument,required TResult Function( ApiError_Schema value)  schema,required TResult Function( ApiError_Undeclared value)  undeclared,required TResult Function( ApiError_Persist value)  persist,required TResult Function( ApiError_BadMessage value)  badMessage,required TResult Function( ApiError_NoKeys value)  noKeys,required TResult Function( ApiError_ClockBehind value)  clockBehind,required TResult Function( ApiError_Rejected value)  rejected,required TResult Function( ApiError_BadSnapshot value)  badSnapshot,required TResult Function( ApiError_SnapshotUnavailable value)  snapshotUnavailable,required TResult Function( ApiError_BadSignature value)  badSignature,required TResult Function( ApiError_NothingToFinish value)  nothingToFinish,required TResult Function( ApiError_AwaitingSignature value)  awaitingSignature,required TResult Function( ApiError_StaleGeneration value)  staleGeneration,}){
 final _that = this;
 switch (_that) {
 case ApiError_BadArgument():
@@ -105,7 +106,8 @@ return badSnapshot(_that);case ApiError_SnapshotUnavailable():
 return snapshotUnavailable(_that);case ApiError_BadSignature():
 return badSignature(_that);case ApiError_NothingToFinish():
 return nothingToFinish(_that);case ApiError_AwaitingSignature():
-return awaitingSignature(_that);}
+return awaitingSignature(_that);case ApiError_StaleGeneration():
+return staleGeneration(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -119,7 +121,7 @@ return awaitingSignature(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ApiError_BadArgument value)?  badArgument,TResult? Function( ApiError_Schema value)?  schema,TResult? Function( ApiError_Undeclared value)?  undeclared,TResult? Function( ApiError_Persist value)?  persist,TResult? Function( ApiError_BadMessage value)?  badMessage,TResult? Function( ApiError_NoKeys value)?  noKeys,TResult? Function( ApiError_ClockBehind value)?  clockBehind,TResult? Function( ApiError_Rejected value)?  rejected,TResult? Function( ApiError_BadSnapshot value)?  badSnapshot,TResult? Function( ApiError_SnapshotUnavailable value)?  snapshotUnavailable,TResult? Function( ApiError_BadSignature value)?  badSignature,TResult? Function( ApiError_NothingToFinish value)?  nothingToFinish,TResult? Function( ApiError_AwaitingSignature value)?  awaitingSignature,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ApiError_BadArgument value)?  badArgument,TResult? Function( ApiError_Schema value)?  schema,TResult? Function( ApiError_Undeclared value)?  undeclared,TResult? Function( ApiError_Persist value)?  persist,TResult? Function( ApiError_BadMessage value)?  badMessage,TResult? Function( ApiError_NoKeys value)?  noKeys,TResult? Function( ApiError_ClockBehind value)?  clockBehind,TResult? Function( ApiError_Rejected value)?  rejected,TResult? Function( ApiError_BadSnapshot value)?  badSnapshot,TResult? Function( ApiError_SnapshotUnavailable value)?  snapshotUnavailable,TResult? Function( ApiError_BadSignature value)?  badSignature,TResult? Function( ApiError_NothingToFinish value)?  nothingToFinish,TResult? Function( ApiError_AwaitingSignature value)?  awaitingSignature,TResult? Function( ApiError_StaleGeneration value)?  staleGeneration,}){
 final _that = this;
 switch (_that) {
 case ApiError_BadArgument() when badArgument != null:
@@ -135,7 +137,8 @@ return badSnapshot(_that);case ApiError_SnapshotUnavailable() when snapshotUnava
 return snapshotUnavailable(_that);case ApiError_BadSignature() when badSignature != null:
 return badSignature(_that);case ApiError_NothingToFinish() when nothingToFinish != null:
 return nothingToFinish(_that);case ApiError_AwaitingSignature() when awaitingSignature != null:
-return awaitingSignature(_that);case _:
+return awaitingSignature(_that);case ApiError_StaleGeneration() when staleGeneration != null:
+return staleGeneration(_that);case _:
   return null;
 
 }
@@ -152,7 +155,7 @@ return awaitingSignature(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String field0)?  badArgument,TResult Function( String field0)?  schema,TResult Function()?  undeclared,TResult Function( String field0)?  persist,TResult Function()?  badMessage,TResult Function()?  noKeys,TResult Function( BigInt now,  BigInt latest)?  clockBehind,TResult Function( String field0)?  rejected,TResult Function( String field0)?  badSnapshot,TResult Function()?  snapshotUnavailable,TResult Function()?  badSignature,TResult Function()?  nothingToFinish,TResult Function()?  awaitingSignature,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String field0)?  badArgument,TResult Function( String field0)?  schema,TResult Function()?  undeclared,TResult Function( String field0)?  persist,TResult Function()?  badMessage,TResult Function()?  noKeys,TResult Function( BigInt now,  BigInt latest)?  clockBehind,TResult Function( String field0)?  rejected,TResult Function( String field0)?  badSnapshot,TResult Function()?  snapshotUnavailable,TResult Function()?  badSignature,TResult Function()?  nothingToFinish,TResult Function()?  awaitingSignature,TResult Function()?  staleGeneration,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ApiError_BadArgument() when badArgument != null:
 return badArgument(_that.field0);case ApiError_Schema() when schema != null:
@@ -167,7 +170,8 @@ return badSnapshot(_that.field0);case ApiError_SnapshotUnavailable() when snapsh
 return snapshotUnavailable();case ApiError_BadSignature() when badSignature != null:
 return badSignature();case ApiError_NothingToFinish() when nothingToFinish != null:
 return nothingToFinish();case ApiError_AwaitingSignature() when awaitingSignature != null:
-return awaitingSignature();case _:
+return awaitingSignature();case ApiError_StaleGeneration() when staleGeneration != null:
+return staleGeneration();case _:
   return orElse();
 
 }
@@ -185,7 +189,7 @@ return awaitingSignature();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String field0)  badArgument,required TResult Function( String field0)  schema,required TResult Function()  undeclared,required TResult Function( String field0)  persist,required TResult Function()  badMessage,required TResult Function()  noKeys,required TResult Function( BigInt now,  BigInt latest)  clockBehind,required TResult Function( String field0)  rejected,required TResult Function( String field0)  badSnapshot,required TResult Function()  snapshotUnavailable,required TResult Function()  badSignature,required TResult Function()  nothingToFinish,required TResult Function()  awaitingSignature,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String field0)  badArgument,required TResult Function( String field0)  schema,required TResult Function()  undeclared,required TResult Function( String field0)  persist,required TResult Function()  badMessage,required TResult Function()  noKeys,required TResult Function( BigInt now,  BigInt latest)  clockBehind,required TResult Function( String field0)  rejected,required TResult Function( String field0)  badSnapshot,required TResult Function()  snapshotUnavailable,required TResult Function()  badSignature,required TResult Function()  nothingToFinish,required TResult Function()  awaitingSignature,required TResult Function()  staleGeneration,}) {final _that = this;
 switch (_that) {
 case ApiError_BadArgument():
 return badArgument(_that.field0);case ApiError_Schema():
@@ -200,7 +204,8 @@ return badSnapshot(_that.field0);case ApiError_SnapshotUnavailable():
 return snapshotUnavailable();case ApiError_BadSignature():
 return badSignature();case ApiError_NothingToFinish():
 return nothingToFinish();case ApiError_AwaitingSignature():
-return awaitingSignature();}
+return awaitingSignature();case ApiError_StaleGeneration():
+return staleGeneration();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -214,7 +219,7 @@ return awaitingSignature();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String field0)?  badArgument,TResult? Function( String field0)?  schema,TResult? Function()?  undeclared,TResult? Function( String field0)?  persist,TResult? Function()?  badMessage,TResult? Function()?  noKeys,TResult? Function( BigInt now,  BigInt latest)?  clockBehind,TResult? Function( String field0)?  rejected,TResult? Function( String field0)?  badSnapshot,TResult? Function()?  snapshotUnavailable,TResult? Function()?  badSignature,TResult? Function()?  nothingToFinish,TResult? Function()?  awaitingSignature,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String field0)?  badArgument,TResult? Function( String field0)?  schema,TResult? Function()?  undeclared,TResult? Function( String field0)?  persist,TResult? Function()?  badMessage,TResult? Function()?  noKeys,TResult? Function( BigInt now,  BigInt latest)?  clockBehind,TResult? Function( String field0)?  rejected,TResult? Function( String field0)?  badSnapshot,TResult? Function()?  snapshotUnavailable,TResult? Function()?  badSignature,TResult? Function()?  nothingToFinish,TResult? Function()?  awaitingSignature,TResult? Function()?  staleGeneration,}) {final _that = this;
 switch (_that) {
 case ApiError_BadArgument() when badArgument != null:
 return badArgument(_that.field0);case ApiError_Schema() when schema != null:
@@ -229,7 +234,8 @@ return badSnapshot(_that.field0);case ApiError_SnapshotUnavailable() when snapsh
 return snapshotUnavailable();case ApiError_BadSignature() when badSignature != null:
 return badSignature();case ApiError_NothingToFinish() when nothingToFinish != null:
 return nothingToFinish();case ApiError_AwaitingSignature() when awaitingSignature != null:
-return awaitingSignature();case _:
+return awaitingSignature();case ApiError_StaleGeneration() when staleGeneration != null:
+return staleGeneration();case _:
   return null;
 
 }
@@ -851,6 +857,38 @@ int get hashCode => runtimeType.hashCode;
 @override
 String toString() {
   return 'ApiError.awaitingSignature()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
+class ApiError_StaleGeneration extends ApiError {
+  const ApiError_StaleGeneration(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ApiError_StaleGeneration);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'ApiError.staleGeneration()';
 }
 
 

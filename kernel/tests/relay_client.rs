@@ -114,7 +114,7 @@ impl Dev {
 
     /// Upload the whole outbox in one append, at the next seq, and acknowledge it.
     fn push(&mut self, relay: &mut Relay) -> Vec<Vec<u8>> {
-        let out = self.k.relay_outbox();
+        let out = self.k.relay_outbox(u64::MAX);
         if out.is_empty() {
             return vec![];
         }
@@ -140,7 +140,8 @@ impl Dev {
         }
         let o = self.k.ingest(envs, now).unwrap();
         let o = self.take(o);
-        let p = self.k.relay_pulled(next).unwrap();
+        let g = self.k.relay_state().generation;
+        let p = self.k.relay_pulled(g, next).unwrap();
         self.take(p);
         o
     }
@@ -191,25 +192,25 @@ fn an_op_learned_over_the_lan_reaches_a_relay_only_device() {
     // B never talks to the relay: A learns B's enrolment and edit over the LAN only.
     b.put("lan", 5, T0 + 1);
     a.lan_from(&b, T0 + 2);
-    let out: Vec<Vec<u8>> = a.k.relay_outbox().into_iter().map(|o| o.id).collect();
+    let out: Vec<Vec<u8>> = a.k.relay_outbox(u64::MAX).into_iter().map(|o| o.id).collect();
     assert_eq!(out.len(), 2, "B's enrolment and edit, learned over the LAN, are A's to forward");
     a.push(&mut relay);
-    assert!(a.k.relay_outbox().is_empty(), "acknowledged uploads leave the outbox");
+    assert!(a.k.relay_outbox(u64::MAX).is_empty(), "acknowledged uploads leave the outbox");
     c.push(&mut relay);
     c.pull(&relay, T0 + 3);
     a.pull(&relay, T0 + 3);
     assert!(c.k.view_all().rows.iter().any(|r| r.row == "lan"), "C, relay-only, has B's edit");
     assert_eq!(c.k.status().pending, 0);
     // What a pull delivers is on the relay already: never queued for upload.
-    assert!(c.k.relay_outbox().is_empty());
+    assert!(c.k.relay_outbox(u64::MAX).is_empty());
     // An op the relay turns out to hold (pulled from someone else's log) leaves the
     // outbox without being uploaded.
     c.put("mine", 1, T0 + 4);
     a.lan_from(&c, T0 + 5);
-    assert_eq!(a.k.relay_outbox().len(), 1);
+    assert_eq!(a.k.relay_outbox(u64::MAX).len(), 1);
     c.push(&mut relay);
     a.pull(&relay, T0 + 6);
-    assert!(a.k.relay_outbox().is_empty(), "pulled from C's log, so not A's to upload");
+    assert!(a.k.relay_outbox(u64::MAX).is_empty(), "pulled from C's log, so not A's to upload");
 }
 
 #[test]
@@ -301,7 +302,7 @@ fn a_device_that_forgets_itself_can_still_upload_and_then_post_its_record() {
     let o = c.drive(s);
     assert!(o.wiped);
     assert!(c.k.relay_forgets().is_empty());
-    let out = c.k.relay_outbox();
+    let out = c.k.relay_outbox(u64::MAX);
     assert_eq!(out.len(), 2, "the offline edit and the Forget, wiped or not");
     c.push(&mut relay);
     let recs = c.k.relay_forgets();
@@ -328,10 +329,10 @@ fn the_relay_state_survives_a_restart_and_a_snapshot_adoption() {
     a.drive(s);
     let o = a.k.compact(T0 + 3 + H + 1).unwrap();
     a.take(o);
-    let before = (a.k.relay_state(), a.k.relay_outbox(), a.k.relay_snapshot());
+    let before = (a.k.relay_state(), a.k.relay_outbox(u64::MAX), a.k.relay_snapshot());
     assert!(!before.1.is_empty() && before.2.as_ref().is_some_and(|s| !s.covers.is_empty()));
     a.reopen(1, T0 + 3 + H + 2);
-    assert_eq!((a.k.relay_state(), a.k.relay_outbox(), a.k.relay_snapshot()), before);
+    assert_eq!((a.k.relay_state(), a.k.relay_outbox(u64::MAX), a.k.relay_snapshot()), before);
 
     // D adopts A's snapshot over the LAN (a reset of every record): D's own relay
     // state, and the ops D holds that the relay lacks, come through the reset.
@@ -347,11 +348,11 @@ fn the_relay_state_survives_a_restart_and_a_snapshot_adoption() {
     assert!(o.reset_records);
     let state = d.k.relay_state();
     assert_eq!(state.next_seq, 2);
-    let out: Vec<Vec<u8>> = d.k.relay_outbox().into_iter().map(|o| o.id).collect();
+    let out: Vec<Vec<u8>> = d.k.relay_outbox(u64::MAX).into_iter().map(|o| o.id).collect();
     assert!(!out.is_empty(), "D's re-issued edit and what the offer brought above the snapshot");
     d.reopen(4, now + 1);
     assert_eq!(d.k.relay_state(), state);
-    assert_eq!(d.k.relay_outbox().into_iter().map(|o| o.id).collect::<Vec<_>>(), out);
+    assert_eq!(d.k.relay_outbox(u64::MAX).into_iter().map(|o| o.id).collect::<Vec<_>>(), out);
 }
 
 #[test]
@@ -374,10 +375,10 @@ fn a_new_relay_generation_resets_the_positions_and_queues_everything_held() {
     let o = a.k.compact(T0 + 4 + H + 1).unwrap();
     a.take(o);
     // The same generation again changes nothing.
-    let before = (a.k.relay_state(), a.k.relay_outbox(), a.k.relay_snapshot());
+    let before = (a.k.relay_state(), a.k.relay_outbox(u64::MAX), a.k.relay_snapshot());
     let o = a.k.relay_generation(1).unwrap();
     a.take(o);
-    assert_eq!((a.k.relay_state(), a.k.relay_outbox(), a.k.relay_snapshot()), before);
+    assert_eq!((a.k.relay_state(), a.k.relay_outbox(u64::MAX), a.k.relay_snapshot()), before);
     assert!(before.1.is_empty() && before.2.as_ref().is_some_and(|s| !s.covers.is_empty()));
 
     // The channel expired and was made again: every position is from the old one.
@@ -386,12 +387,12 @@ fn a_new_relay_generation_resets_the_positions_and_queues_everything_held() {
     let state = a.k.relay_state();
     assert_eq!((state.generation, state.next_seq, state.cursors.len()), (2, 1, 0));
     assert!(a.k.relay_snapshot().is_some_and(|s| s.covers.is_empty()), "old covers name old logs");
-    let held = a.k.relay_outbox();
+    let held = a.k.relay_outbox(u64::MAX);
     assert!(held.len() >= 3, "everything A still holds a body for goes up again");
     // It survives a restart.
     a.reopen(1, T0 + 4 + H + 2);
     assert_eq!(a.k.relay_state(), state);
-    assert_eq!(a.k.relay_outbox(), held);
+    assert_eq!(a.k.relay_outbox(u64::MAX), held);
 
     // Through the new, empty relay, C (relay only) converges from A's snapshot (A's
     // ops behind its base have no bodies left) and the ops A re-uploaded above it.
@@ -467,7 +468,7 @@ fn an_append_whose_answer_was_lost_is_learned_from_the_own_log_on_the_next_pull(
     a.push(&mut relay);
     a.put("a1", 1, T0 + 1);
     // The relay stored the batch, but its answer never arrived: no relay_uploaded.
-    let out = a.k.relay_outbox();
+    let out = a.k.relay_outbox(u64::MAX);
     relay.logs.entry(a.id()).or_default().extend(out.iter().map(|o| o.sealed.clone()));
     // The next round pulls first, and finds its own entries in its own log.
     a.pull(&relay, T0 + 2);
@@ -476,4 +477,216 @@ fn an_append_whose_answer_was_lost_is_learned_from_the_own_log_on_the_next_pull(
     a.push(&mut relay); // asserts the upload continues the log
     a.reopen(1, T0 + 4);
     assert_eq!(a.k.relay_state().next_seq, 4);
+}
+
+#[test]
+fn cursors_pulled_in_another_generation_are_refused() {
+    let mut relay = Relay::default();
+    let mut a = Dev::new(1, T0);
+    let o = a.k.relay_generation(1).unwrap();
+    a.take(o);
+    a.push(&mut relay);
+    a.put("a1", 1, T0 + 1);
+    a.push(&mut relay);
+    assert_eq!(a.k.relay_state().next_seq, 3);
+    // The channel expired and was made again while a pull of the old one was under
+    // way: its cursors name logs that are gone, and would move the own seq into one.
+    let o = a.k.relay_generation(2).unwrap();
+    a.take(o);
+    let stale = vec![RelayCursor { device: a.id().to_vec(), seq: 2 }];
+    assert_eq!(a.k.relay_pulled(1, stale.clone()).unwrap_err(), ApiError::StaleGeneration);
+    assert_eq!(a.k.relay_state().next_seq, 1, "nothing changed");
+    assert!(a.k.relay_state().cursors.is_empty(), "nothing changed");
+    // The same cursors from a pull of the current generation are taken.
+    let o = a.k.relay_pulled(2, stale).unwrap();
+    a.take(o);
+    assert_eq!(a.k.relay_state().next_seq, 3);
+}
+
+#[test]
+fn a_forget_whose_body_was_pruned_before_a_reset_still_reaches_the_forgotten_device() {
+    let mut relay = Relay::default();
+    let mut a = Dev::new(1, T0);
+    let mut b = Dev::new(2, T0);
+    let mut c = Dev::new(3, T0);
+    for d in [&mut a, &mut b, &mut c] {
+        let o = d.k.relay_generation(1).unwrap();
+        d.take(o);
+        d.push(&mut relay);
+    }
+    for d in [&mut a, &mut b, &mut c] {
+        d.pull(&relay, T0 + 1);
+    }
+    // A forgets B while the relay is out of reach; C learns it over the LAN and
+    // writes a checkpoint, which backs the Forget op.
+    let s = a.k.forget_device(b.id().to_vec(), T0 + 2);
+    a.drive(s);
+    let fid = a.k.relay_outbox(u64::MAX).last().unwrap().id.clone();
+    c.lan_from(&a, T0 + 3);
+    let s = c.k.checkpoint(T0 + 4);
+    c.drive(s);
+    a.lan_from(&c, T0 + 5);
+    // Past the horizon A prunes behind C's checkpoint: the Forget op's body goes.
+    let o = a.k.compact(T0 + 5 + H + 1).unwrap();
+    a.take(o);
+    assert!(a.k.relay_snapshot().is_some(), "A pruned behind C's checkpoint");
+    // Meanwhile the channel expired.
+    let o = a.k.relay_generation(2).unwrap();
+    a.take(o);
+    let mut relay = Relay::default();
+    a.push(&mut relay);
+    assert!(ids_of(&relay, a.id()).iter().any(|id| id.to_vec() == fid), "the Forget op goes up again");
+    let recs = a.k.relay_forgets();
+    assert_eq!(recs.len(), 1, "the record is still owed");
+    assert_eq!((recs[0].forget.clone(), recs[0].cut_seq), (fid, 0));
+    a.reopen(1, T0 + 6 + H);
+    assert_eq!(a.k.relay_forgets(), recs, "and it survives a restart");
+    // B reads the new log and wipes.
+    let o = b.k.relay_generation(2).unwrap();
+    b.take(o);
+    assert!(b.pull(&relay, T0 + 7 + H).wiped);
+}
+
+#[test]
+fn the_outbox_comes_in_pages_from_the_front() {
+    let mut relay = Relay::default();
+    let mut a = Dev::new(1, T0);
+    for i in 0..5 {
+        a.put(&format!("r{i}"), i, T0 + 1 + i as u64);
+    }
+    let all = a.k.relay_outbox(u64::MAX);
+    assert_eq!(all.len(), 6, "the enrolment and five edits");
+    assert_eq!(a.k.relay_outbox(2), all[..2].to_vec());
+    assert!(a.k.relay_outbox(0).is_empty());
+    // Page by page, acknowledging each, uploads the same log as one append would.
+    loop {
+        let page = a.k.relay_outbox(2);
+        if page.is_empty() {
+            break;
+        }
+        let log = relay.logs.entry(a.id()).or_default();
+        let first = log.len() as u64 + 1;
+        log.extend(page.iter().map(|o| o.sealed.clone()));
+        let o = a.k.relay_uploaded(page.into_iter().map(|o| o.id).collect(), first).unwrap();
+        a.take(o);
+    }
+    assert_eq!(relay.logs[&a.id()], all.into_iter().map(|o| o.sealed).collect::<Vec<_>>());
+}
+
+#[test]
+fn ops_verified_ahead_in_batches_adopt_exactly_as_unverified_ones() {
+    let mut relay = Relay::default();
+    let mut a = Dev::new(1, T0);
+    let mut b = Dev::new(2, T0);
+    a.push(&mut relay);
+    b.push(&mut relay);
+    a.pull(&relay, T0 + 1);
+    b.pull(&relay, T0 + 1);
+    for i in 0..6 {
+        a.put(&format!("a{i}"), i, T0 + 2 + i as u64);
+    }
+    a.push(&mut relay);
+    let s = a.k.checkpoint(T0 + 10);
+    a.drive(s);
+    a.push(&mut relay);
+    for i in 0..4 {
+        a.put(&format!("late{i}"), i, T0 + 11 + i as u64);
+    }
+    a.push(&mut relay);
+    let now = T0 + 10 + H + 1;
+    let o = a.k.compact(now).unwrap();
+    a.take(o);
+    let snap = a.k.snapshot().expect("a base");
+    b.put("b-offline", 1, T0 + 20);
+    let envs: Vec<Vec<u8>> = relay.logs.values().flatten().cloned().collect();
+
+    let mut twin = Dev {
+        k: Dev::open(2, records(&b.store), now),
+        signer: SoftSigner::from_secret([2; 32]),
+        store: MemPersist::default(),
+    };
+    let s = b.k.adopt_snapshot(snap.clone(), envs.clone(), now);
+    let plain = b.drive(s);
+    let mut verified = 0;
+    for batch in envs.chunks(3) {
+        verified += twin.k.relay_verify(batch.to_vec());
+    }
+    assert_eq!(verified, envs.len() as u64);
+    let s = twin.k.adopt_snapshot(snap, envs, now);
+    let staged = twin.drive(s);
+    assert!(plain.reset_records, "an adoption");
+    assert_eq!(staged, plain, "the same records and changes");
+    assert_eq!(twin.k.view_all(), b.k.view_all());
+
+    // An envelope that does not open, or holds a forged op, is not counted, and the
+    // forged op is still refused by the adoption that follows.
+    let mut bad = relay.logs[&a.id()][0].clone();
+    let last = bad.len() - 1;
+    bad[last] ^= 1;
+    assert_eq!(twin.k.relay_verify(vec![bad]), 0);
+    let keys = hearth_sync_kernel::seal::SealKeys::derive(&common::root(), APP);
+    let (_, mut forged) = keys.open_op(relay.logs[&a.id()].last().unwrap()).unwrap();
+    let at = forged.len() - 2; // inside the signature, the op's last field
+    forged[at] ^= 1;
+    let forged_env = keys.seal_op(&forged);
+    assert_eq!(twin.k.relay_verify(vec![forged_env.clone()]), 0);
+    let o = twin.k.ingest(vec![forged_env], now).unwrap();
+    assert_eq!(o.rejected.len(), 1, "{:?}", o.rejected);
+}
+
+/// Timing, not a check (ignored by default): what verifying ahead takes off one
+/// adoption call, at `HS_PERF_N` ops above the snapshot (2,000 by default).
+///   cargo test --profile perf -p hearth_sync_kernel --test relay_client -- --ignored --nocapture
+#[test]
+#[ignore]
+fn perf_adoption_with_and_without_verifying_ahead() {
+    let n: usize = std::env::var("HS_PERF_N").ok().and_then(|v| v.parse().ok()).unwrap_or(2000);
+    let mut relay = Relay::default();
+    let mut a = Dev::new(1, T0);
+    let mut b = Dev::new(2, T0);
+    a.push(&mut relay);
+    b.push(&mut relay);
+    a.pull(&relay, T0 + 1);
+    b.pull(&relay, T0 + 1);
+    let s = a.k.checkpoint(T0 + 2);
+    a.drive(s);
+    for i in 0..n {
+        a.put(&format!("r{}", i % 200), i as i64, T0 + 3 + i as u64);
+    }
+    a.push(&mut relay);
+    let now = T0 + 3 + n as u64 + H;
+    let o = a.k.compact(now).unwrap();
+    a.take(o);
+    let snap = a.k.snapshot().expect("a base");
+    let envs: Vec<Vec<u8>> = relay.logs.values().flatten().cloned().collect();
+    let mut twin = Dev {
+        k: Dev::open(2, records(&b.store), now),
+        signer: SoftSigner::from_secret([2; 32]),
+        store: MemPersist::default(),
+    };
+    let t = std::time::Instant::now();
+    let s = b.k.adopt_snapshot(snap.clone(), envs.clone(), now);
+    b.drive(s);
+    let plain = t.elapsed();
+    let t = std::time::Instant::now();
+    let mut longest = std::time::Duration::ZERO;
+    for batch in envs.chunks(32) {
+        let t = std::time::Instant::now();
+        twin.k.relay_verify(batch.to_vec());
+        longest = longest.max(t.elapsed());
+    }
+    let ahead = t.elapsed();
+    let t = std::time::Instant::now();
+    let s = twin.k.adopt_snapshot(snap, envs.clone(), now);
+    twin.drive(s);
+    let staged = t.elapsed();
+    eprintln!(
+        "{} ops: adopt {:.1} ms; verify ahead {:.1} ms in batches of 32 (longest {:.2} ms), then adopt {:.1} ms",
+        envs.len(),
+        plain.as_secs_f64() * 1e3,
+        ahead.as_secs_f64() * 1e3,
+        longest.as_secs_f64() * 1e3,
+        staged.as_secs_f64() * 1e3
+    );
+    assert_eq!(twin.k.view_all(), b.k.view_all());
 }

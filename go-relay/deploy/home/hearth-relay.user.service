@@ -1,0 +1,37 @@
+# The Go relay as a systemd *user* service, for a household's spare computer or
+# Raspberry Pi: no root needed to run it. See README.md in this directory.
+#
+#   install -D -m 0755 hearth-relay-go ~/.local/bin/hearth-relay-go
+#   install -D -m 0644 hearth-relay.user.service ~/.config/systemd/user/hearth-relay.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now hearth-relay
+#   loginctl enable-linger "$USER"     # keep it running when nobody is logged in
+#
+# It listens on 127.0.0.1 only. Phones reach it through an HTTPS front on the same
+# machine (README.md, "HTTPS"); the relay itself never faces the network.
+
+[Unit]
+Description=hearthSync home relay (data-blind store-and-forward of sealed ops)
+After=network.target
+
+[Service]
+Type=exec
+# %S is the user's state directory (~/.local/state); StateDirectory creates it.
+StateDirectory=hearth-relay
+StateDirectoryMode=0700
+ExecStart=%h/.local/bin/hearth-relay-go --data %S/hearth-relay --listen 127.0.0.1:8080 --max-channels 16
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=yes
+
+# Resource caps. They take effect only where the user's systemd manager has the
+# memory and CPU controllers delegated (the default on current distributions);
+# elsewhere systemd ignores them and the relay still runs.
+MemoryMax=256M
+Environment=GOMEMLIMIT=200MiB
+CPUQuota=50%
+TasksMax=64
+
+[Install]
+WantedBy=default.target

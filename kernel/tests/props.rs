@@ -15,8 +15,13 @@ use hearth_sync_kernel::{sha256, Id};
 use proptest::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Fixed so the count is reportable and the run fits the 4 GiB build cap in debug.
+/// Fixed so the count is reportable and the run fits a 4 GiB memory cap in debug.
+/// `PROPTEST_CASES` overrides it (and the horizon property's count), as CI does.
 const CASES: u32 = 1000;
+
+fn cases(default: u32) -> u32 {
+    std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
 
 #[derive(Clone, Debug)]
 enum Step {
@@ -127,7 +132,7 @@ fn deliver_all(ops: &[Vec<u8>], now: u64) -> Replica {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: CASES, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: cases(CASES), failure_persistence: None, ..ProptestConfig::default() })]
 
     /// Any delivery order, with duplicates, gives the same state, heads and exclusions,
     /// and that state equals a from-scratch refold.
@@ -410,7 +415,7 @@ fn check_ideal(sim: &Sim, all: &BTreeMap<Id, Vec<u8>>, accounted: &BTreeSet<Id>)
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: HORIZON_CASES, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: cases(HORIZON_CASES), failure_persistence: None, ..ProptestConfig::default() })]
 
     /// With checkpoints, compaction, Forgets, snapshots and returns past a short
     /// horizon: every replica's state is the unpruned fold of what it delivered, so

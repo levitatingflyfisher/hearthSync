@@ -101,6 +101,35 @@ func TestMemoryFlagsSetTheirLimits(t *testing.T) {
 	}
 }
 
+func TestTestHooksAreAFlagThatWarnsAtStart(t *testing.T) {
+	if _, out, _ := runCLI(t, "--help"); !strings.Contains(out, "--test-hooks") {
+		t.Fatal("--test-hooks is not in --help")
+	}
+	c := cli("--data", t.TempDir(), "--listen", "127.0.0.1:0", "--test-hooks")
+	errp, _ := c.StderrPipe()
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { c.Process.Kill(); c.Wait() }()
+	br := bufio.NewReader(errp)
+	first, _ := br.ReadString('\n')
+	addr := strings.SplitN(strings.SplitN(first, `"listen":"`, 2)[1], `"`, 2)[0]
+	if second, _ := br.ReadString('\n'); !strings.Contains(second, `"event":"test_hooks"`) {
+		t.Fatalf("second log line %q", second)
+	}
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	conn.Write([]byte("POST /test/sweep HTTP/1.1\r\nHost: relay\r\nContent-Length: 4\r\nConnection: close\r\n\r\n1000"))
+	resp, _ := io.ReadAll(conn)
+	conn.Close()
+	if !bytes.HasPrefix(resp, []byte("HTTP/1.1 200")) {
+		t.Fatalf("hook: %q", resp)
+	}
+}
+
 func TestFailuresExit1(t *testing.T) {
 	code, out, errs := runCLI(t, "--data", "/nonexistent/hearth-relay-go-test")
 	if code != 1 || out != "" || !strings.Contains(errs, "not a directory") {

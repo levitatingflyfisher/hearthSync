@@ -53,10 +53,14 @@ fn post(addr: SocketAddr, path: &str, body: &[u8]) -> Reply {
 
 /// Run a server on an ephemeral port for the closure's duration.
 fn with_server(cfg: Config, f: impl FnOnce(SocketAddr)) {
+    with_server_hooks(cfg, false, f)
+}
+
+fn with_server_hooks(cfg: Config, test_hooks: bool, f: impl FnOnce(SocketAddr)) {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     let listener = rt.block_on(tokio::net::TcpListener::bind("127.0.0.1:0")).unwrap();
     let addr = listener.local_addr().unwrap();
-    let lim = HttpLimits::for_config(&cfg);
+    let lim = HttpLimits { test_hooks, ..HttpLimits::for_config(&cfg) };
     let relay = Arc::new(Mutex::new(Relay::open(None, cfg).unwrap()));
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
     let server = rt.spawn(serve(listener, relay, lim, async move {
@@ -141,6 +145,39 @@ fn the_handler_answers_the_same_over_http() {
     });
 }
 
+#[test]
+fn the_test_sweep_hook_expires_idle_channels_ahead_of_time_only_when_enabled() {
+    use hearth_sync_kernel::keys::{sign_enroll, DeviceSigner, HouseholdRoot, SoftSigner};
+    use hearth_sync_relay::wire::{channel_id, client};
+    let root = HouseholdRoot::from_seed([3; 64]);
+    let hh = root.enroll_public("lullaby");
+    let ch: String = channel_id("lullaby", &hh).iter().map(|b| format!("{b:02x}")).collect();
+    let dev = SoftSigner::from_secret([4; 32]);
+    let enroll =
+        client::enroll("lullaby", hh, dev.device(), "phone", sign_enroll(&root, "lullaby", &dev.device(), "phone"));
+    let cfg = Config { idle_ms: 10_000, ..Config::default() };
+    // Off by default: the path is unknown, like any other.
+    with_server(cfg.clone(), |addr| {
+        assert_eq!(post(addr, "/test/sweep", b"20000").status, 404);
+    });
+    with_server_hooks(cfg, true, |addr| {
+        let r = post(addr, &format!("/v1/{ch}/enroll"), &enroll);
+        assert_eq!(client::parse_enroll(&r.body), Some(1));
+        // A sweep as of now: the channel is not idle yet.
+        let r = post(addr, "/test/sweep", b"");
+        assert_eq!((r.status, r.body.as_slice()), (200, b"ok".as_slice()));
+        assert_eq!(client::parse_enroll(&post(addr, &format!("/v1/{ch}/enroll"), &enroll).body), Some(1));
+        // As of 20 s from now: it expired, so enrolling again makes it anew.
+        assert_eq!(post(addr, "/test/sweep", b"20000").status, 200);
+        assert_eq!(client::parse_enroll(&post(addr, &format!("/v1/{ch}/enroll"), &enroll).body), Some(2));
+        // The relay's clock did not move: a read signed now is fresh, not stale.
+        let body = client::pull(&channel_id("lullaby", &hh), &dev, 1, [1; 16], vec![], now_ms());
+        assert_eq!(post(addr, &format!("/v1/{ch}/pull"), &body).status, 200);
+        assert_eq!(post(addr, "/test/sweep", b"soon").status, 400);
+        assert_eq!(request(addr, b"GET /test/sweep HTTP/1.1\r\nHost: relay\r\nConnection: close\r\n\r\n").status, 404);
+    });
+}
+
 // ---------------------------------------------------------------- the CLI
 
 fn run(args: &[&str]) -> (i32, String, String) {
@@ -185,6 +222,32 @@ fn help_and_version_go_to_stdout_and_usage_errors_exit_2() {
         assert_eq!(out, "", "{args:?}");
         assert!(err.starts_with("hearth-relay: ") && err.contains("--help"), "{args:?}: {err}");
     }
+}
+
+#[test]
+fn test_hooks_are_a_flag_that_warns_at_start() {
+    let (_, out, _) = run(&["--help"]);
+    assert!(out.contains("--test-hooks"));
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("relay-cli-hooks");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut child = Command::new(BIN)
+        .args(["--data", dir.to_str().unwrap(), "--listen", "127.0.0.1:0", "--test-hooks"])
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut err = BufReader::new(child.stderr.take().unwrap());
+    let mut first = String::new();
+    err.read_line(&mut first).unwrap();
+    let listen = first.split("\"listen\":\"").nth(1).unwrap().split('"').next().unwrap();
+    let addr: SocketAddr = listen.parse().unwrap();
+    let mut second = String::new();
+    err.read_line(&mut second).unwrap();
+    assert!(second.contains("\"event\":\"test_hooks\""), "{second}");
+    assert_eq!(post(addr, "/test/sweep", b"1000").status, 200);
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

@@ -99,6 +99,8 @@ v1 stage 1 report.
 ```sh
 # From the repo root.
 CARGO_TARGET_DIR=target cargo test -p hearth_sync_kernel
+# Fewer property-test cases (CI runs 256; the default is 1000 per property)
+PROPTEST_CASES=256 CARGO_TARGET_DIR=target cargo test -p hearth_sync_kernel
 # Performance (ignored by default; HS_PERF_N sets the op count, 10^4 by default)
 CARGO_TARGET_DIR=target cargo test --profile perf -p hearth_sync_kernel --test perf -- --ignored --nocapture
 # Regenerate the shared vectors (needs uv); ops first, the seal vectors read them
@@ -109,12 +111,20 @@ CARGO_TARGET_DIR=target cargo test -p hearth_sync_relay
 uv run vectors/make_relay_vectors.py > vectors/relay_v1.json
 ```
 
+CI (`.github/workflows/ci.yml`) runs on every push and pull request: rustfmt and
+clippy (`-D warnings`) on every crate, the kernel tests, the Rust relay's tests
+(its end-to-end tests against both relays), the Go relay's vet and tests, a
+static linux/arm64 build of the Go relay, a bounded run of the differential
+harness, and the Flutter package's analyzer and host tests over a freshly built
+bridge library and both relay binaries.
+
 ## Layout
 
 | Path | What |
 |---|---|
 | `kernel/` | The kernel crate and its tests |
 | `relay/` | The Rust relay (`hearth-relay`), its tests and its deploy kit |
+| `go-relay/` | The Go relay (`hearth-relay-go`), its tests, the differential harness and its deploy kit; `go-relay/deploy/home/` is the home relay kit (spare computer or Raspberry Pi) |
 | `vectors/` | Shared op, seal and relay conformance vectors and the Python scripts that build them |
 | `docs/adr/` | Decisions: pure kernel, keys and Forget, format and fold, validity and clocks, horizon, the Forget and horizon model, the committed split and fallback pull, sealing, app schemas, persistence, the app api, the Dart boundary, the relay |
 | `model/` | The Alloy 6 model of Forget, checkpoints and the horizon (ADR 0006) |
@@ -122,6 +132,7 @@ uv run vectors/make_relay_vectors.py > vectors/relay_v1.json
 | `docs/reference/relay-protocol.md` | The relay protocol |
 | `flutter/hearth_sync/` | The Flutter package: the frb bridge crate (`rust/`), the Dart API, signers and record stores, host tests, and an example app |
 | `spike/` | The earlier flutter_rust_bridge spike (throwaway; kept for its measurements) |
+| `.github/workflows/ci.yml` | CI: every suite above, with pinned actions and toolchains |
 
 The design decisions are recorded in `docs/adr/`.
 

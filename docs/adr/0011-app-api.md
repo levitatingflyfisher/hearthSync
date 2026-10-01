@@ -132,15 +132,20 @@ on a reset like the review list), never in `Replica`:
 
 - **Positions.** `relay_state()` gives the own log's next seq and the pull cursors.
   `relay_uploaded(ids, first_seq)` records an acknowledged append;
-  `relay_pulled(cursors)` records a pull, after the ingest that took it. The own
-  log's cursor also raises the own seq: an append the relay stored but whose
+  `relay_pulled(generation, cursors)` records a pull, after the ingest that took it.
+  The own log's cursor also raises the own seq: an append the relay stored but whose
   answer was lost (a time-out) would otherwise leave every later upload answered
-  `seq`. The pulled-back ops left the outbox on ingest.
+  `seq`. The pulled-back ops left the outbox on ingest. `generation` is the one the
+  pull's answers named; cursors from any other generation than the ledger's are
+  refused (`StaleGeneration`) with nothing changed, because they name logs that are
+  gone and would move the own seq into one. The kernel enforces this rather than
+  trusting every client to rebuild its cursors after a re-enrolment.
 - **Generations.** The relay names its channel's generation in every `enroll` and
   `pull` answer; it changes when an idle channel is expired and made again (ADR 0013).
   `relay_generation(g)` records the first one. A different one resets the positions
   (own log from seq 1, no cursors, no covers) and puts every op the device still holds
-  a body for back in the outbox; the client pulls again, then uploads. Ops behind the
+  a body for back in the outbox (and every pending Forget, from the ledger's copy);
+  the client pulls again, then uploads. Ops behind the
   device's base have no body left: a device that needs them adopts a snapshot, which
   the device uploads with empty covers. `relay_state().generation` is 0 until known.
   Forget records not yet posted survive the reset with their `cut_seq` re-based: a
@@ -149,13 +154,22 @@ on a reset like the review list), never in `Replica`:
   target's new log. A later cursor could cover entries the target uploaded after the
   Forget, which the cut does not hold; 0 only means the relay refuses more of the
   target's own uploads, and the author's outbox forwards the cut's ops instead.
-- **The outbox.** `relay_outbox()` is every op this device holds that the relay is
+- **The outbox.** `relay_outbox(max)` is (the first `max` of) every op this device holds that the relay is
   not known to hold, sealed, in clock order: what it wrote, and what an `accept`
   delivered (LAN offers, WipedPush handovers, the ops above a LAN snapshot, but not
   the snapshot's own base). What `ingest` or `adopt_snapshot` delivered came from
   the relay and never joins; an op `ingest` opens leaves the outbox, since the relay
   evidently holds it. This is what lets an op learned only over the LAN reach
   relay-only devices. Acknowledged ops leave; pruned or replaced ones drop out.
+  Only the page asked for is sealed, so a client uploads page by page and no call
+  seals the whole log, as the first round after a generation reset would.
+- **Adopting in pieces.** `relay_verify(sealed)` opens and signature-checks ops
+  ahead of the `adopt_snapshot` that takes them, keeping only their ids (memory
+  only, cleared by that adoption); the adoption skips the signature check (V2) for
+  exactly those bytes, since an op id is the hash of its bytes, and runs every
+  other rule. A web client calls it on small batches between yields. Taking ops out
+  of the adoption instead would change it: the adoption needs every op before its
+  rebase, to know which own edits the relay already holds.
 - **Covers.** An own checkpoint records the pull cursors, plus the own log up to its
   last acknowledged seq, as that checkpoint's covers, only if nothing is pending,
   quarantined or held at that moment (the protocol's pruning rule).
@@ -171,7 +185,14 @@ on a reset like the review list), never in `Replica`:
   back), because a forgotten device reads the channel frozen at its record and must
   find the Forget op there to wipe. `relay_forget_posted(forget)` ends it. The
   rule "upload the Forget op before posting the record" is therefore enforced by
-  the api, not left to each app.
+  the api, not left to each app. The ledger keeps the Forget op's signed bytes
+  until the record is posted: if the relay stays out of reach past the horizon and
+  another device's checkpoint backs the Forget, compaction prunes its body, and
+  without the copy the record could no longer be built, nor the op uploaded again
+  after a generation reset. Compaction itself is unchanged (the checkpoint hash
+  commits to which bodies are kept). A target that lacks the Forget op's parents
+  still holds it pending; it learns its Forget over the LAN, where a snapshot can
+  carry them.
 
 Limits, accepted for v1:
 

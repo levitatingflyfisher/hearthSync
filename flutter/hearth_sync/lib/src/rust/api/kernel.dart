@@ -105,10 +105,13 @@ abstract class HearthKernel implements RustOpaqueInterface {
   Outcome relayGeneration({required BigInt generation});
 
   /// See `Kernel::relay_outbox`.
-  List<SealedOp> relayOutbox();
+  List<SealedOp> relayOutbox({required BigInt max});
 
   /// See `Kernel::relay_pulled`.
-  Outcome relayPulled({required List<RelayCursor> cursors});
+  Outcome relayPulled({
+    required BigInt generation,
+    required List<RelayCursor> cursors,
+  });
 
   /// See `Kernel::relay_snapshot`.
   RelaySnapshot? relaySnapshot();
@@ -121,6 +124,9 @@ abstract class HearthKernel implements RustOpaqueInterface {
     required List<Uint8List> ids,
     required BigInt firstSeq,
   });
+
+  /// See `Kernel::relay_verify`.
+  BigInt relayVerify({required List<Uint8List> sealed});
 
   /// See `Kernel::request`.
   RequestOut request({required List<int> hello});
@@ -161,6 +167,7 @@ sealed class ApiError with _$ApiError implements FrbException {
   const factory ApiError.badSignature() = ApiError_BadSignature;
   const factory ApiError.nothingToFinish() = ApiError_NothingToFinish;
   const factory ApiError.awaitingSignature() = ApiError_AwaitingSignature;
+  const factory ApiError.staleGeneration() = ApiError_StaleGeneration;
 }
 
 class Collection {

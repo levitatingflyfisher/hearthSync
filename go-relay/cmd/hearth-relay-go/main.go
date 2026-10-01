@@ -37,6 +37,8 @@ Options:
   --max-reader-nonces <N>    Live read nonces per device and channel [default: 16]
   --channel-burst <N>        Requests a channel may burst to [default: 600]
   --channel-interval-ms <N>  One more channel request allowed every N ms [default: 100]
+  --test-hooks               Serve POST /test/sweep, a sweep as if N ms (the body) had
+                             passed. For tests only: never on a relay that serves households
   -h, --help                 Print this help
   --version                  Print the version
 
@@ -46,9 +48,10 @@ Stops on SIGTERM or SIGINT.
 `
 
 type args struct {
-	data   string
-	listen netip.AddrPort
-	cfg    relay.Config
+	data      string
+	listen    netip.AddrPort
+	cfg       relay.Config
+	testHooks bool
 }
 
 var errHelp, errVersion = errors.New("help"), errors.New("version")
@@ -122,6 +125,8 @@ func parse(argv []string) (*args, error) {
 				}
 				a.cfg.IdleMS = d * relay.DayMS
 			}
+		case "--test-hooks":
+			a.testHooks = true
 		default:
 			err = fmt.Errorf("unknown argument: %s", arg)
 		}
@@ -166,7 +171,12 @@ func run(argv []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	relay.LogEvent("info", "event", "start", "listen", ln.Addr().String(), "version", version)
-	srv := relay.NewServer(r, relay.LimitsFor(a.cfg))
+	lim := relay.LimitsFor(a.cfg)
+	if a.testHooks {
+		relay.LogEvent("warn", "event", "test_hooks", "path", "/test/sweep")
+		lim.TestHooks = true
+	}
+	srv := relay.NewServer(r, lim)
 	err = srv.Serve(ctx, ln)
 	if cerr := srv.Close(); err == nil {
 		err = cerr

@@ -19,7 +19,7 @@ the household enrolled.
 | `forget` | An enrolled poster signed it; the household key signed the Forget |
 | `append` | The uploader is enrolled, signed the batch, and continues its log; a forgotten uploader stops at its cut |
 | `snapshot` | An enrolled, unforgotten device signed it; it replaces that device's last one |
-| `pull` | An enrolled device signed a fresh, unused read under the relay's current epoch; a forgotten one sees the channel frozen at its Forget |
+| `pull` | An enrolled or forgotten device signed a fresh, unused read under the relay's current epoch; a forgotten one (enrolled in the channel or not) sees the channel frozen at its Forget |
 | `fetch_snapshot` | As pull, for one snapshot; not for a forgotten device |
 
 Around those: size limits, rate limits per device and per channel, read nonces capped
@@ -36,7 +36,9 @@ mkdir -p /srv/hearth-relay
 target/relay/hearth-relay --data /srv/hearth-relay --listen 127.0.0.1:8080
 ```
 
-`hearth-relay --help` lists the options. It prints nothing on stdout while serving;
+`hearth-relay --help` lists the options. `--test-hooks` adds a test-only endpoint that
+runs the sweep as if time had passed (relay-protocol.md, "Test hook"); never start a
+relay that serves households with it. It prints nothing on stdout while serving;
 stderr carries one JSON object per line (request verb, status and timing), never a
 channel or device id. SIGTERM or SIGINT stops it. Put a TLS proxy in front.
 

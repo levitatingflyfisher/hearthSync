@@ -59,7 +59,8 @@ class SnapshotNeededException implements Exception {
 /// Run one round for [hs] against [relay], signing with [signer] (the device
 /// key [hs] was opened with) on [channel]. With [pull] false it only uploads
 /// (after a local write: uploads use no read budget), unless the relay's answers
-/// say the positions are stale, when it pulls first anyway.
+/// say the positions are stale: a new generation pulls first, and an upload
+/// answered `seq` pulls once and uploads again.
 ///
 /// Ingest runs in batches of [ingestBatch] envelopes with a yield between them,
 /// so a long pull never holds the UI thread for one long call (on the web every
@@ -101,7 +102,20 @@ class _Round {
       }
     }
     // A wiped device (holding its key for this one round) only hands over.
-    await _enrolled(() => _push(wiped: wiped));
+    try {
+      await _enrolled(() => _push(wiped: wiped));
+    } on RelayException catch (e) {
+      if (e.code != 'seq' || _answer != null || wiped) rethrow;
+      // An upload-only round met a log the kernel is behind on (an append the
+      // relay stored whose answer was lost): a pull teaches the kernel its own
+      // log and takes those ops out of the outbox. Then upload once more.
+      await _enrolled(_pull);
+      if (hs.isWiped) {
+        result.wiped = true;
+        return result;
+      }
+      await _enrolled(() => _push(wiped: false));
+    }
     if (!wiped && _answer != null) await _enrolled(_snapshot);
     return result;
   }
@@ -181,7 +195,7 @@ class _Round {
     }
     result.pulled += envs.length;
     if (hs.isWiped) return;
-    await hs.relayPulled([
+    await hs.relayPulled(a.generation, [
       for (final e in cursors.entries) RelayCursor(unhex(e.key), e.value),
     ]);
   }
@@ -201,6 +215,14 @@ class _Round {
         rethrow;
       }
       try {
+        // Check the ops' signatures in small batches first, so the adoption
+        // itself (one call) skips them.
+        for (var i = 0; i < envs.length; i += ingestBatch) {
+          await hs.relayVerify(
+            envs.sublist(i, min(i + ingestBatch, envs.length)),
+          );
+          await Future<void>.delayed(Duration.zero);
+        }
         await hs.adoptSnapshot(snap, envs);
       } on HearthSyncException {
         continue;
@@ -212,16 +234,17 @@ class _Round {
   }
 
   Future<void> _push({required bool wiped}) async {
-    var out = await hs.relayOutbox();
-    while (out.isNotEmpty) {
-      final batch = out.take(relay.maxBatch).toList();
+    // One page at a time: after a generation reset the outbox is everything
+    // held, and sealing it in one call would hold the UI thread on the web.
+    while (true) {
+      final batch = await hs.relayOutbox(max: relay.maxBatch);
+      if (batch.isEmpty) break;
       final first = hs.relayState().nextSeq;
       await relay.append(channel, signer, first, [
         for (final o in batch) o.sealed,
       ]);
       await hs.relayUploaded([for (final o in batch) o.id], first);
       result.uploaded += batch.length;
-      out = out.skip(batch.length).toList();
     }
     // The kernel hands a record out only once its Forget op is on the relay.
     for (final f in hs.relayForgets()) {

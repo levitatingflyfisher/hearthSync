@@ -15,7 +15,12 @@ use hearth_sync_kernel::sync::reconcile;
 use proptest::prelude::*;
 use std::collections::BTreeMap;
 
+/// `PROPTEST_CASES` overrides it, as CI does.
 const CASES: u32 = 300;
+
+fn cases() -> u32 {
+    std::env::var("PROPTEST_CASES").ok().and_then(|v| v.parse().ok()).unwrap_or(CASES)
+}
 /// A short horizon so checkpoints age within a case.
 const H: u64 = 20_000;
 
@@ -212,7 +217,7 @@ fn picture(r: &Replica) -> Picture {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: CASES, failure_persistence: None, ..ProptestConfig::default() })]
+    #![proptest_config(ProptestConfig { cases: cases(), failure_persistence: None, ..ProptestConfig::default() })]
 
     /// Persist call by call, reload, and compare; then run the rest of the history
     /// on the originals and on the reloaded replicas, and compare again.

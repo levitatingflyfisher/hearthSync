@@ -84,7 +84,8 @@ await hs.syncWith(peer);        // another device over a SyncPeer transport
 | `enrollDevice(pk, label)` / `forgetDevice(pk)` / `forgetSelf({relay})` | Pairing and "Forget this device". A forgotten device's key is destroyed through `Signer.destroy`; `forgetSelf(relay:)` keeps it for one upload round first, so the relay gets the handover and the Forget record. |
 | `checkpoint()` / `compact()` | Checkpoint, and prune behind the horizon. |
 | `ingest(sealed)` / `snapshot()` / `adoptSnapshot(snap, ops)` | The relay path. |
-| `relayState()` / `relayPulled(cursors)` / `relayOutbox()` / `relayUploaded(ids, firstSeq)` | The relay client's positions, kept in the records: the own log's next seq, the pull cursors, and every op the relay is not known to hold (including ones learned over the LAN), to upload in order. |
+| `relayState()` / `relayPulled(generation, cursors)` / `relayOutbox({max})` / `relayUploaded(ids, firstSeq)` | The relay client's positions, kept in the records: the own log's next seq, the pull cursors, and every op the relay is not known to hold (including ones learned over the LAN), to upload in order, a page of `max` at a time. `relayPulled` refuses cursors from a pull of another generation (`stale_generation`). |
+| `relayVerify(ops)` | Checks the signatures of sealed ops ahead of the `adoptSnapshot` that takes them, in small batches, so the adoption skips those checks. |
 | `relayGeneration(g)` | The relay's channel generation, from every enroll and pull answer; a new one (the channel expired and was made again) resets the positions and queues everything held for upload again. Pull again afterwards. |
 | `relaySnapshot()` / `relayEnrollment(pk)` / `relayForgets()` / `relayForgetPosted(id)` | The base with the covers recorded at its checkpoint; the `enroll` fields; Forget records, each handed out only once its Forget op is on the relay (ADR 0011, "The relay client"). |
 | `syncWithRelay(relay, {pull})` | One relay round: enrol if needed, pull (adopting a snapshot past a pruned cursor), ingest in small batches, upload the outbox, post Forget records, upload the snapshot when the base changed. `pull: false` only uploads. Throws `RelayException` or `SnapshotNeededException`. |
@@ -202,5 +203,7 @@ run the codegen.
   except plain `http://` to `127.0.0.1`, `::1`, `localhost` or the emulator
   host `10.0.2.2`.
 - `ingest` runs on the UI thread, on the web as well. The relay round feeds it
-  32 envelopes at a time and yields between batches; a snapshot adoption is
-  still one call.
+  32 envelopes at a time and yields between batches, uploads a page of the
+  outbox at a time, and verifies an adoption's ops in batches first; the
+  adoption itself (validity, fold, rebase) is still one call, about 90 µs per
+  op natively after verifying ahead, several times that in WASM.

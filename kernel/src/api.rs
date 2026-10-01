@@ -492,6 +492,9 @@ pub enum ApiError {
     NothingToFinish,
     /// Another writing call is waiting for its signature.
     AwaitingSignature,
+    /// Relay cursors from a pull of another channel generation than the one the
+    /// positions belong to ([`Kernel::relay_pulled`]): pull again.
+    StaleGeneration,
 }
 
 impl From<KernelError> for ApiError {
@@ -638,9 +641,21 @@ struct RelayLedger {
     cursors: BTreeMap<DeviceId, u64>,
     /// Covers recorded at own checkpoints, by checkpoint id.
     covers: BTreeMap<Id, BTreeMap<DeviceId, u64>>,
-    /// Own Forgets whose record is not posted yet: target, and the cut's seq in the
-    /// target's log (for a self-Forget, set when the Forget op is acknowledged).
-    forgets: BTreeMap<Id, (DeviceId, Option<u64>)>,
+    /// Own Forgets whose record is not posted yet, by Forget op id.
+    forgets: BTreeMap<Id, PendingForget>,
+}
+
+/// An own Forget whose record the relay has not acknowledged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PendingForget {
+    target: DeviceId,
+    /// The cut's seq in the target's log (for a self-Forget, set when the Forget op
+    /// is acknowledged).
+    cut_seq: Option<u64>,
+    /// The Forget op's signed bytes. Compaction may prune its body (another
+    /// device's checkpoint backs it) before the record is posted; the record and,
+    /// after a generation reset, the op itself are then rebuilt from this copy.
+    op: Vec<u8>,
 }
 
 /// The api record holding the [`RelayLedger`]. Review keys are 33 bytes.
@@ -678,6 +693,9 @@ pub struct Kernel {
     /// The call under way takes ops from the relay (ingest, adopt_snapshot): what
     /// it delivers is on the relay already.
     from_relay: bool,
+    /// Ids of ops whose signatures [`Kernel::relay_verify`] checked, for the next
+    /// [`Kernel::adopt_snapshot`]. Memory only, never persisted.
+    verified: BTreeSet<Id>,
 }
 
 // flutter_rust_bridge keeps `Kernel` as an opaque handle, which must be shareable.
@@ -787,6 +805,7 @@ impl Kernel {
             outbox,
             outbox_dirty: BTreeSet::new(),
             from_relay: false,
+            verified: BTreeSet::new(),
         };
         k.seen_gen = k.replica.fold_generation();
         k.view = k.full_view();
@@ -897,17 +916,46 @@ impl Kernel {
     }
 
     /// Adopt a snapshot fetched from the relay ([`Kernel::snapshot`] on the device
-    /// that made it), with the sealed ops the relay holds above it.
+    /// that made it), with the sealed ops the relay holds above it. Ops passed to
+    /// [`Kernel::relay_verify`] first skip their signature check here.
     pub fn adopt_snapshot(&mut self, snapshot: Vec<u8>, ops: Vec<Vec<u8>>, now: u64) -> Result<Step, ApiError> {
         self.idle()?;
-        let snap = open_snapshot(&self.seal, &snapshot).ok_or(ApiError::BadMessage)?;
+        let snap = open_snapshot(&self.seal, &snapshot).ok_or(ApiError::BadMessage);
+        let snap = match snap {
+            Ok(s) => s,
+            Err(e) => {
+                self.verified.clear();
+                return Err(e);
+            }
+        };
         let (ops, _) = self.open_ops(ops);
         self.from_relay = true;
         let step = self.start(Call::Accept { offer: Offer::Snapshot { snapshot: snap, ops } }, now);
+        // The install (the only ingest of an adoption) is done, whatever came of it.
+        self.verified.clear();
         if step.is_err() {
             self.from_relay = false;
         }
         step
+    }
+
+    /// Open sealed ops from the relay and check their signatures, ahead of the
+    /// [`Kernel::adopt_snapshot`] that will take them, so a long adoption can be
+    /// split: call it on small batches (yielding between them on the web, where
+    /// every call holds the UI thread), then adopt with all of them. The adoption
+    /// then skips those signature checks, which are most of its per-op cost; it
+    /// still runs every other validity rule. Returns how many opened and verified.
+    /// Changes nothing stored; the next `adopt_snapshot` forgets the results.
+    pub fn relay_verify(&mut self, sealed: Vec<Vec<u8>>) -> u64 {
+        let (ops, _) = self.open_ops(sealed);
+        let mut n = 0;
+        for b in ops {
+            if let Ok((_, id)) = op::Op::decode_verified(&b) {
+                self.verified.insert(id);
+                n += 1;
+            }
+        }
+        n
     }
 
     /// Continue the waiting call with the device's signature over the bytes it asked
@@ -973,7 +1021,7 @@ impl Kernel {
             Call::Accept { offer: Offer::Snapshot { snapshot, ops } } => {
                 // Verify and install once, on a copy; only the rebase is replayed.
                 let mut copy = self.replica.clone_with_signer(self.signer(Arc::default()));
-                match copy.adopt_install(snapshot, ops, now)? {
+                match copy.adopt_install(snapshot, ops, now, &self.verified)? {
                     Installed::Done(report) => Ok(Step::Done(self.commit(copy, Some(report)))),
                     Installed::Rebase(a) => self.replay_rebase(Box::new((copy, *a)), now, BTreeMap::new()),
                 }
@@ -1188,11 +1236,13 @@ impl Kernel {
                 self.relay.cursors.clear();
                 self.relay.covers.clear();
                 let me = self.device;
-                for (target, cut) in self.relay.forgets.values_mut() {
-                    *cut = (*target != me).then_some(0);
+                for f in self.relay.forgets.values_mut() {
+                    f.cut_seq = (f.target != me).then_some(0);
                 }
                 let store = self.replica.store();
-                let held: Vec<Id> = store.ids().into_iter().filter(|id| store.body(id).is_some()).collect();
+                let mut held: Vec<Id> = store.ids().into_iter().filter(|id| store.body(id).is_some()).collect();
+                // A pending Forget goes up again even when its body was pruned.
+                held.extend(self.relay.forgets.keys().copied());
                 for id in held {
                     if self.outbox.insert(id) {
                         self.outbox_dirty.insert(id);
@@ -1205,22 +1255,22 @@ impl Kernel {
         Ok(self.outcome(None, None, Vec::new()))
     }
 
-    /// Every op this device holds that the relay is not known to hold, sealed, in
-    /// clock order (parents first): its own writes and what it learned over the LAN.
-    /// Pull before uploading, so what the relay already has drops out. Upload in this
-    /// order, in batches, from [`RelayState::next_seq`], and acknowledge each batch
-    /// with [`Kernel::relay_uploaded`].
-    pub fn relay_outbox(&self) -> Vec<SealedOp> {
-        let mut out: Vec<(Hlc, Id, Vec<u8>)> = self
-            .outbox
-            .iter()
-            .filter_map(|id| {
-                let e = self.replica.store().entry(id)?;
-                Some((e.hlc, *id, self.seal.seal_op(self.replica.store().body(id)?)))
-            })
-            .collect();
-        out.sort();
-        out.into_iter().map(|(_, id, sealed)| SealedOp { id: id.to_vec(), sealed }).collect()
+    /// The first `max` ops of the outbox: every op this device holds that the relay
+    /// is not known to hold, sealed, in clock order (parents first), its own writes
+    /// and what it learned over the LAN. Pull before uploading, so what the relay
+    /// already has drops out. Upload in this order from [`RelayState::next_seq`] and
+    /// acknowledge each batch with [`Kernel::relay_uploaded`]; then ask for the next
+    /// page. Only the page is sealed, so after a generation reset (when everything
+    /// held is queued again) no single call seals the whole log.
+    pub fn relay_outbox(&self, max: u64) -> Vec<SealedOp> {
+        let mut order: Vec<(Hlc, Id)> =
+            self.outbox.iter().filter_map(|id| Some((self.replica.store().entry(id)?.hlc, *id))).collect();
+        order.sort();
+        order
+            .into_iter()
+            .filter_map(|(_, id)| Some(SealedOp { id: id.to_vec(), sealed: self.seal.seal_op(self.held_body(&id)?) }))
+            .take(usize::try_from(max).unwrap_or(usize::MAX))
+            .collect()
     }
 
     /// The relay acknowledged an append of these ops (by id, in the order sent) at
@@ -1237,9 +1287,9 @@ impl Kernel {
                 self.outbox_dirty.insert(*id);
             }
             // A self-Forget's cut ends where the Forget op itself landed.
-            if let Some((target, cut @ None)) = self.relay.forgets.get_mut(id) {
-                if *target == self.device {
-                    *cut = Some(seq);
+            if let Some(f) = self.relay.forgets.get_mut(id) {
+                if f.target == self.device && f.cut_seq.is_none() {
+                    f.cut_seq = Some(seq);
                     self.relay_dirty = true;
                 }
             }
@@ -1255,17 +1305,27 @@ impl Kernel {
     /// ingest that took them; a later checkpoint records them as its covers. The
     /// own log's cursor also moves the own seq on: an append the relay stored
     /// whose answer was lost is learned here, so the next upload continues the log.
-    pub fn relay_pulled(&mut self, cursors: Vec<RelayCursor>) -> Result<Outcome, ApiError> {
+    /// `generation` is the one the pull answers named. Cursors from another
+    /// generation than [`RelayState::generation`] name logs that are gone (or not
+    /// yet known): they are refused with [`ApiError::StaleGeneration`] and nothing
+    /// changes; call [`Kernel::relay_generation`] and pull again.
+    pub fn relay_pulled(&mut self, generation: u64, cursors: Vec<RelayCursor>) -> Result<Outcome, ApiError> {
         self.idle()?;
-        for c in cursors {
-            let d = b32(&c.device, "cursor device")?;
-            if d == self.device && c.seq > self.relay.seq {
-                self.relay.seq = c.seq;
+        if generation != self.relay.generation {
+            return Err(ApiError::StaleGeneration);
+        }
+        let cursors: Vec<(DeviceId, u64)> = cursors
+            .into_iter()
+            .map(|c| Ok((b32(&c.device, "cursor device")?, c.seq)))
+            .collect::<Result<_, ApiError>>()?;
+        for (d, seq) in cursors {
+            if d == self.device && seq > self.relay.seq {
+                self.relay.seq = seq;
                 self.relay_dirty = true;
             }
             let cur = self.relay.cursors.entry(d).or_insert(0);
-            if c.seq > *cur {
-                *cur = c.seq;
+            if seq > *cur {
+                *cur = seq;
                 self.relay_dirty = true;
             }
         }
@@ -1306,17 +1366,23 @@ impl Kernel {
             .forgets
             .iter()
             .filter(|(id, _)| !self.outbox.contains(*id))
-            .filter_map(|(id, (_, cut_seq))| {
-                let Body::Forget { device, cut, auth } = self.replica.body_of(id)?.body else { return None };
+            .filter_map(|(id, f)| {
+                let Body::Forget { device, cut, auth } = op::decode(&f.op).ok()?.body else { return None };
                 Some(RelayForget {
                     forget: id.to_vec(),
                     target: device.to_vec(),
                     cut: ids(&cut),
                     auth: auth.to_vec(),
-                    cut_seq: (*cut_seq)?,
+                    cut_seq: f.cut_seq?,
                 })
             })
             .collect()
+    }
+
+    /// The signed bytes of a held op: its body, or the relay ledger's copy of a
+    /// pending Forget whose body was pruned.
+    fn held_body(&self, id: &Id) -> Option<&[u8]> {
+        self.replica.store().body(id).or_else(|| self.relay.forgets.get(id).map(|f| f.op.as_slice()))
     }
 
     /// The relay recorded this Forget (`["ok"]` to its `forget` post).
@@ -1342,7 +1408,8 @@ impl Kernel {
             match self.replica.body_of(id).map(|o| o.body) {
                 Some(Body::Forget { device, .. }) => {
                     let cut = (device != self.device).then(|| self.relay.cursors.get(&device).copied().unwrap_or(0));
-                    self.relay.forgets.insert(*id, (device, cut));
+                    let op = self.replica.store().body(id).expect("an authored op has a body").to_vec();
+                    self.relay.forgets.insert(*id, PendingForget { target: device, cut_seq: cut, op });
                     self.relay_dirty = true;
                 }
                 // Covers only after a pull that left nothing waiting (relay-protocol.md,
@@ -1364,7 +1431,12 @@ impl Kernel {
         // Ops pruned or replaced by an adoption are gone; covers of checkpoints older
         // than the base will never be asked for.
         let store = self.replica.store();
-        let gone: Vec<Id> = self.outbox.iter().filter(|id| store.body(id).is_none()).copied().collect();
+        let gone: Vec<Id> = self
+            .outbox
+            .iter()
+            .filter(|id| store.body(id).is_none() && !self.relay.forgets.contains_key(*id))
+            .copied()
+            .collect();
         for id in gone {
             self.outbox.remove(&id);
             self.outbox_dirty.insert(id);
@@ -2022,11 +2094,12 @@ fn encode_relay(r: &RelayLedger) -> Vec<u8> {
         CBOR::from(
             r.forgets
                 .iter()
-                .map(|(f, (t, cut))| {
+                .map(|(id, f)| {
                     CBOR::from(vec![
-                        CBOR::to_byte_string(f),
-                        CBOR::to_byte_string(t),
-                        cut.map(CBOR::from).unwrap_or_else(CBOR::null),
+                        CBOR::to_byte_string(id),
+                        CBOR::to_byte_string(f.target),
+                        f.cut_seq.map(CBOR::from).unwrap_or_else(CBOR::null),
+                        CBOR::to_byte_string(&f.op),
                     ])
                 })
                 .collect::<Vec<_>>(),
@@ -2056,9 +2129,9 @@ fn decode_relay(v: &[u8]) -> Option<RelayLedger> {
         .iter()
         .map(|e| {
             let e = arr(e)?;
-            (e.len() == 3).then_some(())?;
-            let cut = if e[2].is_null() { None } else { Some(uint(&e[2])?) };
-            Some((b32o(&e[0])?, (b32o(&e[1])?, cut)))
+            (e.len() == 4).then_some(())?;
+            let cut_seq = if e[2].is_null() { None } else { Some(uint(&e[2])?) };
+            Some((b32o(&e[0])?, PendingForget { target: b32o(&e[1])?, cut_seq, op: bytes(&e[3])? }))
         })
         .collect::<Option<_>>()?;
     Some(RelayLedger { generation, seq: uint(&a[1])?, cursors: parse_pairs(&a[2])?, covers, forgets })

@@ -34,6 +34,9 @@ pub struct HttpLimits {
     /// Longest life of one connection.
     pub conn_timeout: Duration,
     pub max_connections: usize,
+    /// Serve the test hook `POST /test/sweep` (the CLI's `--test-hooks`). Off by
+    /// default; never for a relay that serves households.
+    pub test_hooks: bool,
 }
 
 impl HttpLimits {
@@ -44,6 +47,7 @@ impl HttpLimits {
             body_timeout: Duration::from_secs(60),
             conn_timeout: Duration::from_secs(300),
             max_connections: 512,
+            test_hooks: false,
         }
     }
 }
@@ -106,6 +110,9 @@ async fn handle(req: Request<Incoming>, relay: Arc<Mutex<Relay>>, lim: HttpLimit
             }
         };
     let now = now_ms();
+    if lim.test_hooks && path == "/test/sweep" && method == "POST" {
+        return Ok(test_sweep(&relay, &body, now, started).await);
+    }
     let res = tokio::task::spawn_blocking(move || {
         let mut r = relay.lock().unwrap_or_else(|p| p.into_inner());
         r.handle(&method, &path, &body, now)
@@ -121,6 +128,38 @@ async fn handle(req: Request<Incoming>, relay: Arc<Mutex<Relay>>, lim: HttpLimit
             reply(500, "application/cbor", error_body("internal"))
         }
     })
+}
+
+/// The test hook: run the sweep as if `body` (decimal milliseconds, empty for 0)
+/// had passed, so idle channels expire without a restart. The relay's clock does
+/// not move, so requests signed with the wall clock stay fresh.
+async fn test_sweep(relay: &Arc<Mutex<Relay>>, body: &[u8], now: u64, started: Instant) -> Resp {
+    let ahead = match std::str::from_utf8(body).ok().map(str::trim) {
+        Some("") => Some(0),
+        Some(v) => v.parse::<u64>().ok(),
+        None => None,
+    };
+    let Some(ahead) = ahead else {
+        log_request("test_sweep", 400, started);
+        return reply(400, "application/cbor", error_body("bad_request"));
+    };
+    let relay = relay.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let mut r = relay.lock().unwrap_or_else(|p| p.into_inner());
+        r.sweep_ahead(now, ahead)
+    })
+    .await;
+    match res {
+        Ok(Ok(n)) => {
+            log::event("info", &[("event", "sweep"), ("pruned", &n.to_string()), ("ahead_ms", &ahead.to_string())]);
+            log_request("test_sweep", 200, started);
+            reply(200, "text/plain", b"ok".to_vec())
+        }
+        _ => {
+            log_request("test_sweep", 500, started);
+            reply(500, "application/cbor", error_body("internal"))
+        }
+    }
 }
 
 /// Serve until `shutdown` resolves. Connections past the cap are closed at once.

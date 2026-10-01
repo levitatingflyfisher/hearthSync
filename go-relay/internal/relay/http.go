@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,6 +20,9 @@ type HTTPLimits struct {
 	BodyTimeout    time.Duration // to send a request's body
 	ConnTimeout    time.Duration // the longest life of one connection
 	MaxConnections int
+	// TestHooks serves the test hook POST /test/sweep (the CLI's --test-hooks).
+	// Off by default; never for a relay that serves households.
+	TestHooks bool
 }
 
 // LimitsFor is the Rust relay's transport limits for cfg.
@@ -108,11 +112,43 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		return
 	}
+	if s.lim.TestHooks && path == "/test/sweep" && req.Method == http.MethodPost {
+		s.testSweep(w, body, started)
+		return
+	}
 	s.mu.Lock()
 	r := s.relay.Handle(req.Method, path, body, s.now())
 	s.mu.Unlock()
 	logRequest(r.Verb, r.Status, started)
 	s.reply(w, r.Status, r.ContentType, r.Body)
+}
+
+// testSweep is the test hook: the sweep as if body (decimal milliseconds, empty for
+// 0) had passed, so idle channels expire without a restart. The relay's clock does
+// not move, so requests signed with the wall clock stay fresh.
+func (s *Server) testSweep(w http.ResponseWriter, body []byte, started time.Time) {
+	var ahead uint64
+	if v := strings.TrimSpace(string(body)); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			logRequest("test_sweep", 400, started)
+			s.reply(w, 400, "application/cbor", errorBody("bad_request"))
+			return
+		}
+		ahead = n
+	}
+	s.mu.Lock()
+	n, err := s.relay.SweepAhead(s.now(), ahead)
+	s.mu.Unlock()
+	if err != nil {
+		logEvent("error", "event", "sweep", "error", err.Error())
+		logRequest("test_sweep", 500, started)
+		s.reply(w, 500, "application/cbor", errorBody("internal"))
+		return
+	}
+	logEvent("info", "event", "sweep", "pruned", strconv.FormatUint(n, 10), "ahead_ms", strconv.FormatUint(ahead, 10))
+	logRequest("test_sweep", 200, started)
+	s.reply(w, 200, "text/plain", []byte("ok"))
 }
 
 // Sweep runs the relay's prune sweep once.

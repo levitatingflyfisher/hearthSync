@@ -222,6 +222,14 @@ class Relay:
         if c is None or d not in c["devices"] or c["devices"][d]["auth"] is None: raise Fail("not_enrolled")
         return c
 
+    def reader(self, ch, d):
+        """A pull's reader: enrolled, or forgotten (a forgotten target may never have
+        enrolled in this channel, and must still read its Forget op)."""
+        c = self.channels.get(ch)
+        if c is None or d not in c["devices"] or (c["devices"][d]["auth"] is None and c["devices"][d]["cut_seq"] is None):
+            raise Fail("not_enrolled")
+        return c
+
     def fresh(self, ts, now):
         if not (now - self.cfg["window_ms"] <= ts <= now + self.cfg["window_ms"]): raise Fail("stale")
 
@@ -353,7 +361,7 @@ class Relay:
     def pull(self, ch, r, now):
         cfg = self.cfg
         if len(r["cursors"]) > cfg["max_devices"]: raise Fail("too_large")
-        c = self.enrolled(ch, r["signer"])
+        c = self.reader(ch, r["signer"])
         self.fresh(r["ts"], now); self.signed(ch, r); self.epoch_ok(r); self.nonce(ch, r, now); self.device_rate(ch, r["signer"], now)
         me = c["devices"][r["signer"]]
         frozen = me["cut_seq"] is not None
@@ -526,6 +534,10 @@ c.req(t + 9, append_req(CH, B, 1, [b1], t + 9), "forgotten")
 c.req(t + 9, forget_req(CH, pub(C), [], 0, A, t + 9), "ok")                                     # a device never enrolled
 c.req(t + 9, enroll_req(APP, EK, pub(C), "C"), "forgotten")
 c.req(t + 10, pull_req(CH, A, t + 10, NONCE(4), [(pub(A), 1)]), "ok")
+c.req(t + 10, append_req(CH, A, 4, [envelope(REF(101), tag=101)], t + 10), "ok")         # after C's Forget
+r_ = c.req(t + 11, pull_req(CH, C, t + 11, NONCE(1), []), "ok")                          # never enrolled, forgotten: reads frozen
+assert fe in r_ and e3 in r_ and envelope(REF(101), tag=101) not in r_
+c.req(t + 11, fetch_req(CH, C, t + 11, NONCE(2), pub(A)), "not_enrolled")
 c.done()
 
 # 5. A device forgets itself and hands over.
@@ -793,6 +805,17 @@ c.req(t + 4 + I, enroll_req(APP, third, pub(C), "C"), "ok", ch=TCH)             
 c.req(t + 5 + I, enroll_req(APP, EK, pub(A), "A"), "ok")                          # the household returns
 c.req(t + 5 + I, append_req(CH, A, 3, [e3], t + 5 + I), "seq")                     # its log starts over
 c.req(t + 5 + I, append_req(CH, A, 1, [e3], t + 5 + I), "ok")
+# Back, A forgets C, which has not enrolled again: the Forget op goes up first, then
+# the record (cut_seq 0: nothing of C's new log). C's pull, still naming no
+# generation, gets the new one and the channel frozen at its Forget, Forget op
+# included, so it can wipe; enrolling again is refused.
+fe2 = envelope(REF(111), tag=111)
+c.req(t + 6 + I, append_req(CH, A, 2, [fe2], t + 6 + I), "ok")
+c.req(t + 6 + I, forget_req(CH, pub(C), [], 0, A, t + 6 + I), "ok")
+c.req(t + 6 + I, append_req(CH, A, 3, [envelope(REF(112), tag=112)], t + 6 + I), "ok")
+r_ = c.req(t + 7 + I, pull_req(CH, C, t + 7 + I, NONCE(3), []), "ok")
+assert fe2 in r_ and envelope(REF(112), tag=112) not in r_
+c.req(t + 7 + I, enroll_req(APP, EK, pub(C), "C"), "forgotten")
 c.done()
 
 # 22. What refreshes last_write.

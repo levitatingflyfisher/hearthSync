@@ -162,4 +162,76 @@ void main() {
       await loop.stop();
     },
   );
+
+  test(
+    'an upload-only round answered seq pulls once, then uploads again',
+    () async {
+      final clock = TestClock()..now = DateTime.now().millisecondsSinceEpoch;
+      final d = await device(1, clock);
+      final me = await d.signer.publicKey();
+      // A one-device relay: d's log, and how often each verb was asked.
+      final log = <Uint8List>[];
+      final asked = <String, int>{};
+      final relay = RelayClient(
+        Uri.parse('https://relay.test/'),
+        client: MockClient((req) async {
+          final verb = req.url.pathSegments.last;
+          asked[verb] = (asked[verb] ?? 0) + 1;
+          final body = cborDecode(req.bodyBytes) as List;
+          switch (verb) {
+            case 'enroll':
+              return cbor(200, ['ok', 1]);
+            case 'pull':
+              final cursors = body[4] as List;
+              final from = cursors.isEmpty
+                  ? 0
+                  : (cursors.first as List)[1] as int;
+              return cbor(200, [
+                'ok',
+                1,
+                [
+                  if (log.isNotEmpty)
+                    [
+                      me,
+                      1,
+                      [
+                        for (var i = from; i < log.length; i++) [i + 1, log[i]],
+                      ],
+                    ],
+                ],
+                [],
+                false,
+              ]);
+            case 'append':
+              final first = body[1] as int;
+              final envs = (body[2] as List).cast<Uint8List>();
+              if (first != log.length + 1) {
+                return cbor(409, ['err', 'seq', log.length]);
+              }
+              log.addAll(envs);
+              return cbor(200, ['ok', log.length]);
+          }
+          return cbor(404, ['err', 'not_found']);
+        }),
+      );
+      final loop = SyncLoop(d.hs, relay);
+      expect((await loop.syncNow()).ok, isTrue);
+      // An append the relay stored whose answer never came back: the kernel
+      // still holds the op, and its seq is behind the relay's log.
+      clock.now += 1;
+      await d.hs.put('rooms', 'lost', {'name': 'Cellar'});
+      log.addAll([for (final o in await d.hs.relayOutbox()) o.sealed]);
+      clock.now += 1;
+      await d.hs.put('rooms', 'next', {'name': 'Pantry'});
+      asked.clear();
+      final s = await loop.syncNow(pull: false);
+      expect(s.ok, isTrue, reason: '${s.error}');
+      expect(asked['pull'], 1, reason: 'one pull, after the seq answer');
+      expect(asked['append'], 2);
+      expect(s.result!.uploaded, 1, reason: "only the edit the relay lacked");
+      expect(await d.hs.relayOutbox(), isEmpty);
+      expect(log, hasLength(3));
+      await loop.stop();
+    },
+  );
 }

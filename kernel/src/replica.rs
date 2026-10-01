@@ -605,18 +605,30 @@ impl<S: OpStore + Default> Replica<S> {
     /// Ingest signed ops in any order, with duplicates. Quarantined ops are retried
     /// first against the new `now`.
     pub fn ingest<B: AsRef<[u8]>>(&mut self, ops: impl IntoIterator<Item = B>, now: u64) -> IngestReport {
+        self.ingest_checked(ops, now, &BTreeSet::new())
+    }
+
+    /// [`Replica::ingest`], skipping the signature check (V2) for ops whose id is in
+    /// `checked`: the caller verified exactly those bytes already (the id is their
+    /// hash). Everything else about validity runs as usual.
+    pub(crate) fn ingest_checked<B: AsRef<[u8]>>(
+        &mut self,
+        ops: impl IntoIterator<Item = B>,
+        now: u64,
+        checked: &BTreeSet<Id>,
+    ) -> IngestReport {
         let mut rep = IngestReport::default();
         for (id, (op, bytes)) in std::mem::take(&mut self.quarantined) {
             self.journal.mark(RecordKey::Quarantined(id));
             self.admit(id, op, bytes, now, &mut rep);
         }
         for bytes in ops {
-            self.ingest_one(bytes.as_ref(), now, &mut rep);
+            self.ingest_one(bytes.as_ref(), now, checked, &mut rep);
         }
         rep
     }
 
-    fn ingest_one(&mut self, bytes: &[u8], now: u64, rep: &mut IngestReport) {
+    fn ingest_one(&mut self, bytes: &[u8], now: u64, checked: &BTreeSet<Id>, rep: &mut IngestReport) {
         let id = sha256(bytes);
         if self.store.contains(&id)
             || self.pending.contains_key(&id)
@@ -627,7 +639,9 @@ impl<S: OpStore + Default> Replica<S> {
             rep.duplicates += 1;
             return;
         }
-        match Op::decode_verified(bytes) {
+        let decoded =
+            if checked.contains(&id) { op::decode(bytes).map(|op| (op, id)) } else { Op::decode_verified(bytes) };
+        match decoded {
             Err(r) => self.reject(id, r, rep),
             Ok((op, _)) if op.app != self.app => self.reject(id, Reject::WrongApp, rep),
             Ok((op, _)) => self.admit(id, op, bytes.to_vec(), now, rep),

@@ -282,6 +282,7 @@ pub enum _ApiError {
     BadSignature,
     NothingToFinish,
     AwaitingSignature,
+    StaleGeneration,
 }
 
 // ------------------------------------------------------------------ free functions
@@ -430,8 +431,14 @@ impl HearthKernel {
 
     /// See `Kernel::relay_outbox`.
     #[frb(sync)]
-    pub fn relay_outbox(&self) -> Vec<SealedOp> {
-        self.k.relay_outbox()
+    pub fn relay_outbox(&self, max: u64) -> Vec<SealedOp> {
+        self.k.relay_outbox(max)
+    }
+
+    /// See `Kernel::relay_verify`.
+    #[frb(sync)]
+    pub fn relay_verify(&mut self, sealed: Vec<Vec<u8>>) -> u64 {
+        self.k.relay_verify(sealed)
     }
 
     /// See `Kernel::relay_uploaded`.
@@ -442,8 +449,8 @@ impl HearthKernel {
 
     /// See `Kernel::relay_pulled`.
     #[frb(sync)]
-    pub fn relay_pulled(&mut self, cursors: Vec<RelayCursor>) -> Result<Outcome, ApiError> {
-        self.k.relay_pulled(cursors)
+    pub fn relay_pulled(&mut self, generation: u64, cursors: Vec<RelayCursor>) -> Result<Outcome, ApiError> {
+        self.k.relay_pulled(generation, cursors)
     }
 
     /// See `Kernel::relay_generation`.

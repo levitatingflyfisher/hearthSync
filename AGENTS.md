@@ -27,12 +27,14 @@ first, then the ADRs in `docs/adr/`. The design decisions it implements are reco
 | `relay/tests/` | Conformance (vectors), e2e (kernel replicas through the relay), HTTP and CLI, proptest fuzzing |
 | `relay/deploy/` | Containerfile, systemd unit, deploy notes (ADR 0013) |
 | `go-relay/` | The Go relay, written from the protocol page alone: strict dCBOR (`internal/dcbor`), strict Ed25519 (`internal/edsig`), handler, bbolt store and HTTP server (`internal/relay`), CLI, deploy kit |
+| `go-relay/deploy/home/` | The home relay kit: `build-release.sh` (static linux amd64/arm64/armv7 + SHA256SUMS), a systemd user unit, `compose.yaml`, and the guide (why the Go relay at home, quick start, HTTPS options). CI runs the build script |
 | `go-relay/difftest/` | The differential harness: generated request sequences through both relays, answers and store digests compared every step; `rustdriver/` is the Rust relay behind a pipe (its own cargo workspace) |
 | `docs/reference/op-format.md` | The wire format |
 | `docs/reference/relay-protocol.md` | The relay protocol, which both relays implement |
 | `model/forget.als` | Alloy 6 model of Forget, checkpoints and the horizon (ADRs 0006, 0007: the v0.2 checks end in `…2`); run with the Alloy jar in the git-ignored `.tools/` |
 | `flutter/hearth_sync/` | The Flutter package (ADR 0012): `rust/` is the bridge crate (its own workspace and lockfile; `#[frb(mirror)]` of every `api` type, one opaque `HearthKernel`), `rust/src/api/signing.rs` native Ed25519 for the signers (the seed passed per call, never kept), `lib/src/` the Dart API, signers (WebCrypto / Rust / pure-Dart backends), stores, and the relay client (`relay_cbor.dart`, `relay_client.dart`: pure-Dart dCBOR over package:http; `sync_loop.dart`: the round and `SyncLoop`; `lan/`: same-Wi-Fi sync, ADR 0014: `lan_code.dart` the code, address chooser and keys, `lan_io.dart` the listener and session, `lan_stub.dart` the web's), `lib/src/rust/` the committed generated bindings, `test/` host tests over the Linux `.so` (`relay_e2e_test.dart` starts both relay binaries on localhost), `example/` the demo app and `tool/build_web.sh` |
 | `spike/` | The throwaway flutter_rust_bridge spike (not in the workspace) |
+| `.github/workflows/ci.yml` | CI: Rust (fmt, clippy, kernel, relay incl. e2e against the Go driver), Go (vet, tests, arm64 build, differential run), Flutter package (analyze, host tests). Actions pinned by commit, toolchains by version; bump both together with the local toolchain |
 
 ## Working here
 

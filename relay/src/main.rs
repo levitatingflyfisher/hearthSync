@@ -28,6 +28,8 @@ Options:
   --max-reader-nonces <N>    Live read nonces per device and channel [default: 16]
   --channel-burst <N>        Requests a channel may burst to [default: 600]
   --channel-interval-ms <N>  One more channel request allowed every N ms [default: 100]
+  --test-hooks               Serve POST /test/sweep, a sweep as if N ms (the body) had
+                             passed. For tests only: never on a relay that serves households
   -h, --help                 Print this help
   --version                  Print the version
 
@@ -40,6 +42,7 @@ struct Args {
     data: PathBuf,
     listen: SocketAddr,
     cfg: Config,
+    test_hooks: bool,
 }
 
 enum Parsed {
@@ -52,6 +55,7 @@ fn parse(args: Vec<String>) -> Result<Parsed, String> {
     let mut data = None;
     let mut listen: SocketAddr = "127.0.0.1:8080".parse().expect("valid default");
     let mut cfg = Config::default();
+    let mut test_hooks = false;
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
         let mut val = |name: &str| it.next().ok_or_else(|| format!("{name} needs a value"));
@@ -81,11 +85,12 @@ fn parse(args: Vec<String>) -> Result<Parsed, String> {
                 let d = num("--idle-days", val("--idle-days")?)?;
                 cfg.idle_ms = d.checked_mul(DAY_MS).ok_or("--idle-days: too large")?;
             }
+            "--test-hooks" => test_hooks = true,
             other => return Err(format!("unknown argument: {other}")),
         }
     }
     let data = data.ok_or("--data <DIR> is required")?;
-    Ok(Parsed::Run(Box::new(Args { data, listen, cfg })))
+    Ok(Parsed::Run(Box::new(Args { data, listen, cfg, test_hooks })))
 }
 
 fn main() -> ExitCode {
@@ -132,7 +137,10 @@ fn main() -> ExitCode {
         };
         let addr = listener.local_addr().map(|a| a.to_string()).unwrap_or_default();
         log::event("info", &[("event", "start"), ("listen", &addr), ("version", env!("CARGO_PKG_VERSION"))]);
-        let lim = HttpLimits::for_config(&args.cfg);
+        if args.test_hooks {
+            log::event("warn", &[("event", "test_hooks"), ("path", "/test/sweep")]);
+        }
+        let lim = HttpLimits { test_hooks: args.test_hooks, ..HttpLimits::for_config(&args.cfg) };
         serve(listener, Arc::new(Mutex::new(relay)), lim, shutdown()).await;
         log::event("info", &[("event", "stop")]);
         ExitCode::SUCCESS

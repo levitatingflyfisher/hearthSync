@@ -227,6 +227,17 @@ would cost storage and a pull); with it kept, those seqs are "pruned" and skippe
 pin slots that way. They can already pin one by writing once every 400 days, so
 `max_channels` stays the bound.
 
+**A forgotten device reads frozen even if it never enrolled in the channel.** A
+`forget` may create a record for a target the channel does not know. That happens in
+practice after an expiry: the household returns, and a device forgets another before
+that one has enrolled again. The target's pull used to answer `not_enrolled` (it had
+no enrolment) and its enrolment `forgotten`, so it could never read its Forget op
+through the relay. A pull now accepts a forgotten reader with or without an
+enrolment, and shows it the channel frozen at its record, which holds the Forget op
+(the author re-uploads it before posting the record). `fetch_snapshot` is unchanged.
+A device forgotten *before* the expiry keeps its record, but the entries it could see
+expire with the rest, so it learns its Forget only over the LAN (ADR 0014).
+
 ### Two relays, and the harness that holds them together
 
 The Go relay (`go-relay/`, stage 4) is the protocol implemented a second time from the
@@ -315,7 +326,11 @@ pinned. The harness does not reach the HTTP layer; each relay tests that itself.
 - Since stage 6 the Flutter package has the same client in Dart (`RelayClient`,
   `HearthSync.syncWithRelay`, `SyncLoop`; ADR 0012), with its own strict,
   depth-limited dCBOR decoder, polling in minutes and uploading after writes
-  without spending reads. Its end-to-end test runs both relay binaries.
+  without spending reads. Its end-to-end test runs both relay binaries, and reaches
+  idle expiry through the relays' test-only `--test-hooks` endpoint (`POST
+  /test/sweep`, a sweep as if time had passed; relay-protocol.md, "Test hook"),
+  which lives in the HTTP layer so the handler, the vectors and the harness are
+  unchanged.
 - Labels are visible to the relay. Apps should keep device labels unrevealing, or a
   later protocol version could send a separate, relay-only label signed with the
   enrolment.

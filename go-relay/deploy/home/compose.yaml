@@ -1,0 +1,32 @@
+# The Go relay in a container, for a household machine that already runs
+# Podman or Docker. See README.md in this directory.
+#
+#   podman compose -f go-relay/deploy/home/compose.yaml up -d --build
+#   (or: docker compose -f go-relay/deploy/home/compose.yaml up -d --build)
+#
+# It publishes the relay on 127.0.0.1:8080 only: put the HTTPS front on the
+# host (README.md, "HTTPS"), never expose port 8080 itself.
+services:
+  hearth-relay:
+    build:
+      context: ../..
+      dockerfile: deploy/Containerfile
+    image: localhost/hearth-relay-go
+    restart: unless-stopped
+    # Appended to the image's entrypoint (--data /data --listen 0.0.0.0:8080).
+    command: ["--max-channels", "16"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - hearth-data:/data
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    environment:
+      GOMEMLIMIT: 200MiB
+
+volumes:
+  hearth-data:

@@ -140,6 +140,17 @@ func (r *Relay) Digest() ([32]byte, error) {
 // own), expires idle channels and drops expired nonces. It returns the number of
 // entries pruned.
 func (r *Relay) Sweep(now uint64) (uint64, error) {
+	return r.SweepAhead(now, 0)
+}
+
+// SweepAhead is the sweep with pruning and idle expiry run as of now + aheadMS
+// (nonces still expire as of now). For tests only: the HTTP layer's --test-hooks
+// hook, so an expiry test needs neither a restart nor a fake clock.
+func (r *Relay) SweepAhead(now, aheadMS uint64) (uint64, error) {
+	later := now + aheadMS
+	if later < now {
+		later = ^uint64(0)
+	}
 	var n uint64
 	err := r.db.Update(func(tx *bolt.Tx) error {
 		s := stx{tx}
@@ -151,13 +162,13 @@ func (r *Relay) Sweep(now uint64) (uint64, error) {
 			return nil
 		})
 		for i := range ids {
-			m, err := s.prune(&ids[i], now, r.cfg.RetainMS)
+			m, err := s.prune(&ids[i], later, r.cfg.RetainMS)
 			if err != nil {
 				return err
 			}
 			n += m
 		}
-		_, err := s.expireIdle(now, r.cfg.IdleMS)
+		_, err := s.expireIdle(later, r.cfg.IdleMS)
 		return err
 	})
 	for k, live := range r.nonces {
@@ -386,6 +397,28 @@ func enrolled(s stx, ch, d *ID) (*channelRow, *deviceRow, error) {
 		return nil, nil, err
 	}
 	if dev == nil || !dev.enrolled() {
+		return nil, nil, failed("not_enrolled")
+	}
+	return c, dev, nil
+}
+
+// reader returns a pull's channel and record if the reader is enrolled or
+// forgotten. A Forget can be recorded for a target that never enrolled in the
+// channel (the household came back after an expiry and forgot it first), and that
+// target must still read its Forget op.
+func reader(s stx, ch, d *ID) (*channelRow, *deviceRow, error) {
+	c, err := s.channel(ch)
+	if err != nil {
+		return nil, nil, err
+	}
+	if c == nil {
+		return nil, nil, failed("not_enrolled")
+	}
+	dev, err := s.device(ch, d)
+	if err != nil {
+		return nil, nil, err
+	}
+	if dev == nil || !dev.enrolled() && !dev.forgotten() {
 		return nil, nil, failed("not_enrolled")
 	}
 	return c, dev, nil
@@ -673,7 +706,7 @@ func (r *Relay) pull(ch *ID, body []byte, now uint64) ([]byte, error) {
 		return nil, failed("too_large")
 	}
 	return r.view(func(s stx) ([]byte, error) {
-		c, me, err := enrolled(s, ch, &q.reader)
+		c, me, err := reader(s, ch, &q.reader)
 		if err != nil {
 			return nil, err
 		}

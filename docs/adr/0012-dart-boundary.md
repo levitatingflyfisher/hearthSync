@@ -190,7 +190,11 @@ HTTP: each kernel call queues on its own. `SyncLoop` runs one round at a time,
 a full one every few minutes (the relay allows 16 reads per device per five
 minutes), an upload-only one debounced after any change with outgoing ops
 (uploads carry no nonce, so they cost no read budget), and retries after
-network, 408, 429 and 5xx answers with full-jitter exponential backoff.
+network, 408, 429 and 5xx answers with full-jitter exponential backoff. An
+upload-only round answered `seq` (the relay's log is ahead of the kernel's
+seq, as after an append whose answer was lost) pulls once, which teaches the
+kernel its own log, and uploads again, instead of failing until the next full
+round.
 
 A self-Forget could not reach the relay at all: the key was destroyed as the
 Forget was stored, and the relay needs this device's signature on the append
@@ -218,7 +222,16 @@ measured, because no browser was run. The stage 2 report has the full numbers.
 - If `Persist.apply` throws, the kernel in memory is ahead of the store. The
   app drops the `HearthSync` and opens it again from the records.
 - `ingest` and adoption run on the UI thread, on the web as well. The relay
-  round keeps ingest batches small; an adoption is still one call.
+  round keeps every long job in small calls with a yield between them: ingest
+  in batches of 32, uploads one page of `relayOutbox(max:)` at a time (only the
+  page is sealed, so the first round after a generation reset does not seal the
+  whole log at once), and, before an adoption, `relayVerify` on batches of 32,
+  which takes the ops' signature checks out of the adoption call. The adoption
+  itself is still one call: natively, at 2,000 ops above the snapshot, it went
+  from 284 ms to 176 ms (verifying ahead took 130 ms in batches of at most
+  2.5 ms; the ignored `perf_adoption_with_and_without_verifying_ahead` test).
+  What remains is validity, the fold and the rebase, which an incremental
+  adoption would have to split; WASM is several times slower than native.
 - The generated layer is internal. Apps see only the wrapper, so it can change
   with the frb version.
 - The web build has run in headless Chromium (no COOP/COEP, WebCrypto,
