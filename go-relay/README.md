@@ -48,8 +48,7 @@ HTTP framework, no CLI or logging library.
 
 ## Tests
 
-On the workshop box run every command through `heavy.sh`, with `GOCACHE`, `GOTMPDIR`
-and `TMPDIR` on real disk (not `/tmp`).
+Keep `GOCACHE`, `GOTMPDIR` and `TMPDIR` on real disk (not `/tmp`, which may be RAM-backed).
 
 ```sh
 go vet ./... && go test ./...        # vectors, codec, signatures, HTTP layer, CLI

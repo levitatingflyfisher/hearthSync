@@ -37,7 +37,10 @@ plugin template, with cargokit building Android. It holds:
 declared again as `#[frb(mirror(T))]`, so the generated code uses the kernel's
 own types. There is no conversion layer that could drift from them. The one
 opaque type, `HearthKernel`, wraps `Kernel` and forwards each method unchanged.
-Everything is `#[frb(sync)]`. frb reads a type named `Value` as
+Everything is `#[frb(sync)]`, including the `#[frb(init)]` initializer: one
+async call builds frb's worker pool, which the single-threaded web build cannot
+start, and `HearthSync.init` then threw in the browser before the app ran
+(`test/web_sync_only_test.dart` guards it). frb reads a type named `Value` as
 `serde_json::Value`, so the kernel's `Value` crosses as `KernelValue`, the same
 type under another name. frb emits freezed classes for enums with data, so
 freezed and build_runner are dev dependencies. build_runner must run with
@@ -111,8 +114,9 @@ seed is zeroised on the way out). `Kernel` still never sees a device key
   3,674 µs (38x); a write (prepare, sign, finish, store) 697 µs, from 4,525 µs.
 - `test/signer_test.dart` checks RFC 8032's vectors byte for byte on every
   backend the host reaches, RFC 8410's PKCS#8 example, and that the kernel
-  accepts what each backend signs. WebCrypto has not run anywhere yet: only a
-  browser has it, and flutter test runs on the VM. The web bundle builds with
+  accepts what each backend signs. WebCrypto runs only in a browser, which
+  flutter test cannot reach; headless Chromium picks it and signs RFC 8032
+  test 1 byte for byte (the demo's Vector line). The web bundle builds with
   it (`tool/build_web.sh`); WASM is now 339,589 B gzip (+15 KB, the relay api
   and the signing functions), 346 KB with the glue, under the 400 KB bar.
 
@@ -217,4 +221,7 @@ measured, because no browser was run. The stage 2 report has the full numbers.
   round keeps ingest batches small; an adoption is still one call.
 - The generated layer is internal. Apps see only the wrapper, so it can change
   with the frb version.
-- Nothing here has run in a browser or on a device yet.
+- The web build has run in headless Chromium (no COOP/COEP, WebCrypto,
+  IndexedDB, both relays over CORS). The release APK has run on an Android
+  emulator: native signing, Drift and secure storage across an app kill, both
+  relays, and a self-Forget's key destruction. No physical phone yet.

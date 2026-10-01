@@ -31,7 +31,7 @@ increments, so a read captured before a restart cannot be replayed after it.
 ## Running
 
 ```sh
-cargo build --profile relay -p hearth_sync_relay      # on the workshop box: through heavy.sh
+cargo build --profile relay -p hearth_sync_relay
 mkdir -p /srv/hearth-relay
 target/relay/hearth-relay --data /srv/hearth-relay --listen 127.0.0.1:8080
 ```
@@ -43,7 +43,7 @@ channel or device id. SIGTERM or SIGINT stops it. Put a TLS proxy in front.
 ## Tests
 
 ```sh
-# From the repo root; on the workshop box wrap each in heavy.sh.
+# From the repo root.
 CARGO_TARGET_DIR=target cargo test -p hearth_sync_relay
 PROPTEST_CASES=20000 CARGO_TARGET_DIR=target cargo test -p hearth_sync_relay --test fuzz
 uv run vectors/make_relay_vectors.py > vectors/relay_v1.json   # after changing the protocol

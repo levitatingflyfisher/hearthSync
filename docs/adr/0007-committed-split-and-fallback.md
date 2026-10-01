@@ -121,7 +121,7 @@ counterexample within its scope:
 Both flags are reachable (`reach_fallback`, and `reach_backed` at 9 states). The v0.1
 induction checks now pin both flags off, so their recorded results still reproduce.
 
-All runs used Alloy 6.2.0 through `heavy.sh`: glucose for the trace checks and
+All runs used Alloy 6.2.0 under a 4 GiB memory cap: glucose for the trace checks and
 `ind_step2` (198 s; SAT4J did not finish in 570 s), and SAT4J for `ind_ideal2` and
 `ind_final2`. Every clean result means "no counterexample within this scope", not a
 proof.

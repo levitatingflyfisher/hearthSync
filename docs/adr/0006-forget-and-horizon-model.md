@@ -1,7 +1,7 @@
 # ADR 0006: The Forget and horizon model
 
 Status: accepted (2026-09-28). Kernel v0.1 implements all eight changes, with the two
-operator rulings recorded under **Decision** below. This ADR records the model, what it
+project decisions recorded under **Decision** below. This ADR records the model, what it
 found, the changes, and where the implementation departs from what was modelled.
 
 ## Context
@@ -251,7 +251,7 @@ bodies and folds others is reachable.
 
 ## Decision
 
-The operator ruled on both open questions:
+Both open questions were decided:
 
 - **Ruling 1: shield option A.** Any concurrent checkpoint shields its past from Forgets
   it lacks, except one written by the forgotten device outside the cut. No age

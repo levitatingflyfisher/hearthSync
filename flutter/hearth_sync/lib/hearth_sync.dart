@@ -5,6 +5,7 @@ export 'src/changes.dart';
 export 'src/drift_persist.dart';
 export 'src/hearth_sync.dart';
 export 'src/idb_persist.dart';
+export 'src/lan/lan.dart';
 export 'src/persist.dart';
 export 'src/relay.dart';
 export 'src/relay_client.dart'

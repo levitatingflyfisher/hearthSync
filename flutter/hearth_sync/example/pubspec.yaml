@@ -38,6 +38,15 @@ dependencies:
     # The example app is bundled with the plugin so we use a path dependency on
     # the parent directory to use the current plugin's version.
     path: ../
+  # The browser probe (lib/probe/probe_web.dart): IndexedDB records and
+  # window.hearthProbe, as a web app would wire them.
+  idb_shim: ^2.6.0
+  web: 1.1.1
+  # The device panel (lib/device/panel_io.dart): records in a Drift database
+  # file and the key in secure storage, as an Android app would wire them.
+  drift: ^2.35.0
+  flutter_secure_storage: 9.2.4
+  path_provider: ^2.1.6
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -64,6 +73,15 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # Bundled so the web build needs no font from Google's CDN. The family is
+  # named Roboto on purpose: the web engine fetches its Roboto fallback only
+  # when no family of that name is bundled. Apache-2.0, from the Flutter
+  # SDK's material_fonts (fonts/Roboto_LICENSE.txt).
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: fonts/Roboto-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

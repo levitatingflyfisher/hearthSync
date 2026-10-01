@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The device panel syncs through a relay (the package README's step 5). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="hearth_sync_example"
         android:name="${applicationName}"

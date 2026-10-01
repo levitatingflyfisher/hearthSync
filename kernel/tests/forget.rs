@@ -1,4 +1,4 @@
-//! "Forget this device" (Decision 2, operator ruling Q1): ops a forgotten device
+//! "Forget this device" (Decision 2, ADR 0002): ops a forgotten device
 //! writes after the cut leave the fold everywhere; the forgotten device wipes its
 //! keys when it receives the Forget, and at once when it forgets itself.
 

@@ -1,7 +1,7 @@
 # Deploying hearth-relay
 
-Nothing here has been deployed yet, and the image has not been built on the workshop
-box. The unit passes `systemd-analyze verify`; its sandbox has not been run.
+Nothing here has been deployed yet, and the image has not been built
+yet. The unit passes `systemd-analyze verify`; its sandbox has not been run.
 
 The threat this kit answers is the **machine** being taken over (to mine, say). The
 data is safe regardless: the relay only ever holds sealed envelopes. So the aim is a

@@ -72,7 +72,7 @@ such an op to relay-only peers. The api does not yet list such ops for forwardin
   cover its queued ops, so the handover works whether the record or the ops arrive
   first.
 - A forgotten device reads the channel **frozen** at its Forget: only entries stored
-  before the record (`ord <= freeze_ord`), no snapshots. The operator's ruling says the
+  before the record (`ord <= freeze_ord`), no snapshots. The project's decision says the
   remote device wipes when it next receives a message, and the kernel wipes only on a
   delivered Forget op, whose parents it needs, so the relay must let it read that far.
   It must not let it read further: until MLS the forgotten device still holds the sync
@@ -282,8 +282,8 @@ pinned. The harness does not reach the HTTP layer; each relay tests that itself.
   axum was not taken: routing six fixed paths does not need a router, and axum adds
   tower, a router and serde. Logs are hand-written JSON lines, argument parsing is by
   hand, so there is no tracing, serde or clap.
-- **Fuzzing uses proptest.** cargo-fuzz needs a nightly toolchain, which the workshop
-  box does not have and which is a box-wide change. The proptest targets cover request
+- **Fuzzing uses proptest.** cargo-fuzz needs a nightly toolchain, which the build
+  machine does not have and which is a machine-wide change. The proptest targets cover request
   parsing, signature and household-auth checks under tampering, and the nesting guard.
 
 ## Deviations from design §7

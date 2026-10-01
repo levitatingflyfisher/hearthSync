@@ -19,4 +19,6 @@ export WASM_PACK_CACHE="$repo/.tools/wasm-pack-cache"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/../rust/target}"
 "$repo/.tools/bin/wasm-pack" build -t no-modules -d "$PWD/web/pkg" --no-typescript \
   --out-name hearth_sync_bridge --release ../rust
-flutter build web --release
+# --no-web-resources-cdn: CanvasKit is served from this origin, not
+# www.gstatic.com (web/flutter_bootstrap.js also points fallback fonts here).
+flutter build web --release --no-web-resources-cdn

@@ -1,4 +1,4 @@
-package com.openhearth.hearth_sync_example
+package com.openhearth.hearthsyncexample
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -5,7 +5,7 @@ Status: accepted (v0, 2026-09-28)
 ## Context
 
 Decision 2 keeps the shared BIP39 phrase as the household root and adds
-"Forget this device". The operator's Q1 ruling: every device stores the 12
+"Forget this device". The project decided: every device stores the 12
 words, all holders are equal, and a forgotten device wipes its stored words and
 derived keys when it next syncs, or at once if it forgets itself.
 

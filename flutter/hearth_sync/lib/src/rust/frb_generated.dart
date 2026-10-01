@@ -56,7 +56,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 
   @override
   Future<void> executeRustInitializers() async {
-    await api.crateApiKernelInitApp();
+    api.crateApiKernelInitApp();
   }
 
   @override
@@ -238,7 +238,7 @@ abstract class RustLibApi extends BaseApi {
     required List<int> message,
   });
 
-  Future<void> crateApiKernelInitApp();
+  void crateApiKernelInitApp();
 
   List<SealedOp> crateApiKernelSealedHandover({
     required List<Record> records,
@@ -1407,17 +1407,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<void> crateApiKernelInitApp() {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
+  void crateApiKernelInitApp() {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 37,
-            port: port_,
-          );
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 37)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,

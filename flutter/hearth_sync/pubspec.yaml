@@ -20,7 +20,10 @@ dependencies:
   # WebCrypto Ed25519 on the web (bindings only; already in the tree).
   web: 1.1.1
   # Record stores (ADR 0010): Drift on native, IndexedDB on the web.
-  drift: ^2.34.0
+  # DriftPersist uses only customStatement, customSelect and transaction, so
+  # any 2.x from 2.28 serves; the fleet's apps are on 2.28 and 2.31, and a
+  # floor of 2.34 forced sqlite3 3.x (and a new web sqlite3.wasm) on them.
+  drift: '>=2.28.0 <3.0.0'
   idb_shim: ^2.6.0
   # The relay client's transport (POST + dCBOR, docs/reference/relay-protocol.md).
   http: ^1.5.0

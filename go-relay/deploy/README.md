@@ -6,7 +6,7 @@ alert: all of it applies unchanged, with `hearth-relay-go` for `hearth-relay`. R
 relay or the other on a data directory, not both; their stores differ (bbolt here,
 SQLite there) and neither reads the other's.
 
-Nothing here has been deployed, and the image has not been built on the workshop box.
+Nothing here has been deployed, and the image has not been built yet.
 The unit passes `systemd-analyze verify` (which only notes the binary is not installed);
 its sandbox has not been run.
 

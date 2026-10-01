@@ -1462,16 +1462,15 @@ fn wire__crate__api__signing__ed25519_sign_impl(
     )
 }
 fn wire__crate__api__kernel__init_app_impl(
-    port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
     data_len_: i32,
-) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "init_app",
-            port: Some(port_),
-            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
         },
         move || {
             let message = unsafe {
@@ -1479,14 +1478,12 @@ fn wire__crate__api__kernel__init_app_impl(
             };
             let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, ()>((move || {
-                    let output_ok = Ok::<_, ()>({
-                        crate::api::kernel::init_app();
-                    })?;
-                    std::result::Result::Ok(output_ok)
-                })())
-            }
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::kernel::init_app();
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -2735,7 +2732,6 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        37 => wire__crate__api__kernel__init_app_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2784,6 +2780,7 @@ fn pde_ffi_dispatcher_sync_impl(
         34 => wire__crate__api__kernel__HearthKernel_write_impl(ptr, rust_vec_len, data_len),
         35 => wire__crate__api__signing__ed25519_public_key_impl(ptr, rust_vec_len, data_len),
         36 => wire__crate__api__signing__ed25519_sign_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__kernel__init_app_impl(ptr, rust_vec_len, data_len),
         38 => wire__crate__api__kernel__sealed_handover_impl(ptr, rust_vec_len, data_len),
         39 => wire__crate__api__kernel__stored_info_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),

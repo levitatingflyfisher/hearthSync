@@ -7,8 +7,7 @@ Status: accepted (kernel v1 stage 1, 2026-09-29)
 Ruling Q9 picked XChaCha20-Poly1305. Design §2.1 seals each signed op whole under
 the app's sync key with a random 24-byte nonce and AAD
 `"oh-op/v1" | app | channel | device`, so the relay never sees parents, clocks or
-bodies. ADR 0001 keeps the kernel free of randomness. The operator's dispatch for v1
-asks that every op and snapshot be sealed as it leaves the kernel for storage or the
+bodies. ADR 0001 keeps the kernel free of randomness. The v1 requirements ask that every op and snapshot be sealed as it leaves the kernel for storage or the
 relay, under keys derived from the household root, with the AAD binding household,
 app and op id.
 

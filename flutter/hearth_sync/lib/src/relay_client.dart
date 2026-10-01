@@ -300,19 +300,45 @@ abstract final class RelayWire {
 /// (learned from the first read's `epoch` answer) and its HTTP client.
 class RelayClient {
   /// A client for the relay at [base] (e.g. `https://relay.example/`).
+  ///
+  /// Throws [ArgumentError] unless [base] is `https://`, or plain `http://`
+  /// to loopback (`127.0.0.1`, `::1`, `localhost`) or the Android emulator's
+  /// host alias `10.0.2.2`. dart:io ignores Android's cleartext policy, so
+  /// this is the only thing that stops a mistyped `http://` relay from
+  /// carrying channel ids and timing in the clear.
   RelayClient(
-    this.base, {
+    Uri base, {
     http.Client? client,
     DateTime Function() clock = DateTime.now,
     Random? random,
     this.timeout = const Duration(seconds: 30),
     this.maxBatch = 64,
-  }) : _http = client ?? http.Client(),
+  }) : base = _checkedBase(base),
+       _http = client ?? http.Client(),
        _clock = clock,
        _random = random ?? Random.secure();
 
   /// The relay's base URL.
   final Uri base;
+
+  /// Hosts plain `http://` may reach: this machine, or the emulator's host.
+  static const _cleartextHosts = {'127.0.0.1', '::1', 'localhost', '10.0.2.2'};
+
+  static Uri _checkedBase(Uri base) {
+    final host = base.host.toLowerCase();
+    final ok = host.isNotEmpty &&
+        (base.scheme == 'https' ||
+            (base.scheme == 'http' && _cleartextHosts.contains(host)));
+    if (!ok) {
+      throw ArgumentError.value(
+        base.toString(),
+        'base',
+        'a relay URL must be https:// (plain http:// is allowed only to '
+            '127.0.0.1, ::1, localhost or the emulator host 10.0.2.2)',
+      );
+    }
+    return base;
+  }
 
   /// Per-request time limit.
   final Duration timeout;

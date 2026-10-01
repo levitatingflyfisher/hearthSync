@@ -35,7 +35,7 @@ void main() {
     () async {
       final epochs = <int>[];
       final relay = RelayClient(
-        Uri.parse('http://relay.test/'),
+        Uri.parse('https://relay.test/'),
         client: MockClient((req) async {
           expect(req.method, 'POST');
           expect(req.url.path, endsWith('/pull'));
@@ -53,7 +53,7 @@ void main() {
       expect((relay.epoch, relay.epochRetries), (5, 1));
       // A second refusal in a row is the caller's to handle.
       final stuck = RelayClient(
-        Uri.parse('http://relay.test/'),
+        Uri.parse('https://relay.test/'),
         client: MockClient((_) async => cbor(409, ['err', 'epoch', 9])),
       );
       await expectLater(
@@ -68,7 +68,7 @@ void main() {
     () async {
       final signer = SoftwareSigner.fromSeed(List.filled(32, 1));
       final down = RelayClient(
-        Uri.parse('http://relay.test/'),
+        Uri.parse('https://relay.test/'),
         client: MockClient((_) async => throw http.ClientException('refused')),
       );
       await expectLater(
@@ -80,7 +80,7 @@ void main() {
         ),
       );
       final junk = RelayClient(
-        Uri.parse('http://relay.test/'),
+        Uri.parse('https://relay.test/'),
         client: MockClient((_) async => cbor(200, ['ok', 'not a seq'])),
       );
       await expectLater(
@@ -100,7 +100,7 @@ void main() {
       final clock = TestClock()..now = DateTime.now().millisecondsSinceEpoch;
       final d = await device(1, clock);
       final relay = RelayClient(
-        Uri.parse('http://relay.test/'),
+        Uri.parse('https://relay.test/'),
         client: MockClient((req) async {
           requests++;
           if (limited) return cbor(429, ['err', 'rate_limited']);
@@ -138,7 +138,7 @@ void main() {
       final d = await device(1, clock);
       var inFlight = 0, maxInFlight = 0, pulls = 0;
       final relay = RelayClient(
-        Uri.parse('http://relay.test/'),
+        Uri.parse('https://relay.test/'),
         client: MockClient((req) async {
           inFlight++;
           maxInFlight = max(maxInFlight, inFlight);

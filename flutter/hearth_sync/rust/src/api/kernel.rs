@@ -513,7 +513,10 @@ impl HearthKernel {
     }
 }
 
-#[frb(init)]
+/// Runs once from `RustLib.init`. It is sync like every other call: an async
+/// one would build frb's worker pool, which the single-threaded web build cannot
+/// start (non-shared memory), and init would throw before the app ran.
+#[frb(init, sync)]
 pub fn init_app() {
     flutter_rust_bridge::setup_default_user_utils();
 }

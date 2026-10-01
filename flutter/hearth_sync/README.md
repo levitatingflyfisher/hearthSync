@@ -92,6 +92,7 @@ await hs.syncWith(peer);        // another device over a SyncPeer transport
 | `RelayClient(base)` | The relay's HTTP verbs (POST, dCBOR), with the epoch learned and signed on reads. |
 | `hello` / `request` / `offer` / `handover` / `accept` | The five sealed LAN messages. `HearthSync` implements `SyncPeer` with them. |
 | `syncWith(peer)` | A full two-way sync with any `SyncPeer`, in the kernel's order. |
+| `LanListener.start(hs, seed)` / `syncOverLan(hs, seed, code)` | Same-Wi-Fi sync with no relay (ADR 0014): one phone listens and shows a `LanCode`; the other connects with it and drives `syncWith`. The session is authenticated by the household's words plus the code's one-time token; every message is MAC'd with a strict sequence. Native only (`lanSupported`); the web stub throws `LanException('unsupported')`. |
 | `view()` / `review()` / `dismissReview(key)` / `devices()` / `status()` | Reading. |
 | `changes` / `opened` | Every stored call's `Changes`: rows, sets and streams for the app's tables, `outgoing` sealed ops for the relay, `wiped`, rejections, review entries. `opened` holds what `open` itself stored. |
 
@@ -125,15 +126,34 @@ drop the `HearthSync` and open it again.
 
 Both real stores can write the app's own tables in the same transaction.
 
+## Same-Wi-Fi sync
+
+```dart
+// The phone that shows the code:
+final listener = await LanListener.start(hs, seed); // throws LanException('unreachable') off Wi-Fi
+show(listener.code.text);                          // XXXXXX-XXXXXX-XXXXXX, or a QR of an app URI with ?code=
+await listener.done;                               // the other phone synced (or LanException: expired, refused)
+
+// The phone that types it:
+final code = LanCode.tryParse(typed);              // null on a typo (the code carries a CRC)
+if (code != null) await syncOverLan(hs, seed, code);
+```
+
+One code serves one session; it expires after 10 minutes and after three
+refused phones. A phone of another household is refused before its kernel does
+any work. Android needs only `INTERNET`. A PWA cannot listen, so on the web it
+syncs through the relay. Why plain HTTP, why no mDNS and no in-app scanner:
+`../../docs/adr/0014-lan-transport.md`.
+
 ## Build and test
 
-Every command below goes through the workshop's `heavy.sh`, one at a time.
+Run the commands below one at a time on a small machine; each build peaks around 2 GiB.
 
 ```sh
 # Host library for the Dart tests
 (cd rust && CARGO_TARGET_DIR=$PWD/target cargo build --release)
 flutter test --concurrency=1 test/sync_test.dart   # and persist, forget, review, signer, relay,
-                                                    # relay_wire, relay_client
+                                                    # relay_wire, relay_client, lan_code, lan
 
 # The end-to-end tests start both real relays on localhost; build them first
 # (from the repo root; a missing binary fails the test):
@@ -148,6 +168,9 @@ dart run build_runner build --force-jit   # freezed; sqlite3's build hooks stop 
 # Web bundle (single-threaded WASM, no COOP/COEP) and APK, from example/
 tool/build_web.sh
 flutter build apk --release
+# With the device panel (Put / Sync / Forget per relay; emulator reaches the host at 10.0.2.2)
+flutter build apk --release --target-platform android-x64 --split-per-abi \
+  --dart-define=HEARTH_RELAYS=rust=http://10.0.2.2:18081/,go=http://10.0.2.2:18082/
 ```
 
 The generated files are committed: `lib/src/rust/**` (with `*.freezed.dart`)
@@ -156,12 +179,28 @@ run the codegen.
 
 ## Not yet
 
-- No LAN transport. `SyncPeer` is the seam one implements. The relay client
-  (`RelayClient`, `SyncLoop`) is here and tested against both relays over
-  localhost HTTP.
-- Nothing has run in a browser or on a device. The web and Android builds are
-  proven to build, not to run (see the kernel v1 stage 2 report); WebCrypto
-  signing is untested for the same reason.
+- The LAN transport has run over loopback in host tests and between the
+  Android emulator and a host device (Lullaby); not between two real phones.
+  No mDNS discovery: the code is typed or scanned.
+- The web build has run in headless Chromium only (not Firefox or Safari),
+  served with no COOP/COEP: the demo passes, WebCrypto signs, IndexedDB and the
+  key survive a reload, and two browsers sync through both relays over CORS. A
+  Content-Security-Policy must allow `'unsafe-eval'` (frb's loader runs
+  `new Function`). The demo makes no request off its own origin: it builds
+  with `--no-web-resources-cdn`, its `web/flutter_bootstrap.js` points
+  CanvasKit and fallback fonts at the app, and it bundles a family named
+  Roboto so the engine never fetches one. An app on this package should do
+  the same, or its PWA fetches CanvasKit and Roboto from Google's gstatic.
+- Android has run on an emulator only (API 34, x86_64), not a phone. The release
+  APK draws its first frame; signing goes through the native bridge (about
+  0.06–0.1 ms a signature, pure Dart 3.5 ms); records (Drift) and the key
+  survive an app kill; it syncs with a host device through both relays; a
+  self-Forget destroys the key and a relaunch opens as wiped. dart:io sent
+  plain `http://` to the relay with no network-security config, so Android's
+  cleartext policy does not guard the relay URL. `RelayClient` guards it
+  instead: it throws `ArgumentError` for any URL that is not `https://`,
+  except plain `http://` to `127.0.0.1`, `::1`, `localhost` or the emulator
+  host `10.0.2.2`.
 - `ingest` runs on the UI thread, on the web as well. The relay round feeds it
   32 envelopes at a time and yields between batches; a snapshot adoption is
   still one call.

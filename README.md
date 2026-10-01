@@ -78,8 +78,12 @@ v1 stage 1 report.
 - Stage 2 adds the Flutter package `flutter/hearth_sync`. It binds `api`
   through flutter_rust_bridge and keeps the device key in secure storage. It
   stores records through Drift or IndexedDB (see its README and ADR 0012). Its
-  web and Android builds have been built but never run in a browser or on a
-  device.
+  web build has run in headless Chromium from a plain static server (no
+  COOP/COEP): WebCrypto signing, IndexedDB across a reload, and two browsers
+  syncing through both relays. Its release APK has run on an Android 14
+  emulator (x86_64): native Rust signing, records in Drift and the key in
+  secure storage across an app kill, sync with a host device through both
+  relays, and a self-Forget that destroys the key.
 - It is not used by any app yet. Each app keeps its current sync until it moves
   onto the kernel. Lullaby moves first.
 - The known gaps are listed in `docs/adr/0005-horizon-snapshots-rebase.md` and,
@@ -93,7 +97,7 @@ v1 stage 1 report.
 ## Running
 
 ```sh
-# From the repo root; on the workshop box wrap it in heavy.sh.
+# From the repo root.
 CARGO_TARGET_DIR=target cargo test -p hearth_sync_kernel
 # Performance (ignored by default; HS_PERF_N sets the op count, 10^4 by default)
 CARGO_TARGET_DIR=target cargo test --profile perf -p hearth_sync_kernel --test perf -- --ignored --nocapture
@@ -117,10 +121,9 @@ uv run vectors/make_relay_vectors.py > vectors/relay_v1.json
 | `docs/reference/op-format.md` | The wire format |
 | `docs/reference/relay-protocol.md` | The relay protocol |
 | `flutter/hearth_sync/` | The Flutter package: the frb bridge crate (`rust/`), the Dart API, signers and record stores, host tests, and an example app |
-| `spike/` | The earlier flutter_rust_bridge spike (throwaway; see its report in the research notes) |
+| `spike/` | The earlier flutter_rust_bridge spike (throwaway; kept for its measurements) |
 
-The design lives outside the repo, in the workshop's research notes
-(`2026-09-27-sync-kernel-design.md`).
+The design decisions are recorded in `docs/adr/`.
 
 ## License
 
